@@ -20,7 +20,7 @@ The interesting problem here is not generating audio. It is that a language mode
 | Injected audio corruptions detected | **5 / 5** |
 | Script wording verified present in the audio, by transcription | **96%** |
 | Judge variance across repeat runs — the noise floor for any claim above | **±2 pts** |
-| Unit tests | **256** |
+| Unit tests | **265** |
 
 Every number is reproducible from this repo: `npm run eval`, `npm run eval:validate`, `npm test`.
 
@@ -86,7 +86,7 @@ Everything under `lib/` is plain TypeScript with no framework dependency, which 
 | **P5** | Web app with a transcript synced to playback | ✅ Done |
 | **P6** | CI on the web build, deployed URL | ⬜ Planned |
 
-**The pipeline runs end to end — drop in a PDF, watch it work, listen with a transcript that follows along.** Covered by 256 unit tests. A deployed URL lands in P6.
+**The pipeline runs end to end — drop in a PDF, watch it work, listen with a transcript that follows along.** Covered by 265 unit tests. A deployed URL lands in P6.
 
 ---
 
@@ -158,6 +158,7 @@ npm run generate -- paper.pdf --minutes 6 --provider anthropic --out episode.jso
 | `--minutes N` | `10` | Target spoken length; drives the word and token budget |
 | `--provider` | `LLM_PROVIDER` from `.env` | `anthropic` \| `openai` \| `open` |
 | `--out FILE` | `<paper>.episode.json` | Where to write the full result |
+| `--figures` | off | Have a vision model read the paper's diagrams and tables |
 
 ### Running fully free and offline
 
@@ -221,7 +222,13 @@ A hosted OpenAI-compatible tier (Together, Groq, OpenRouter) removes the RAM con
 lib/
 ├── config/env.ts          Typed env loading and provider selection
 ├── pdf/
-│   └── extract.ts         PDF → { title, abstract, sections[] }, noise stripped
+│   ├── extract.ts         PDF → { title, abstract, sections[] }, noise stripped
+│   └── render.ts          Figure-page detection and rasterisation
+├── vision/
+│   ├── describe.ts        Figure pages → descriptions, labelled as derived
+│   ├── prompt.ts          Transcribe, do not interpret
+│   ├── anthropic.ts       Claude vision
+│   └── openaiCompatible.ts  GPT-4o or a local model via Ollama
 ├── tts/
 │   ├── wav.ts             RIFF parsing, joining, exact durations
 │   ├── chunk.ts           Sentence-aware splitting for input limits
@@ -283,6 +290,44 @@ Each provider reaches the same guaranteed shape by a different route:
 | **Open models** | Schema embedded in the prompt + JSON mode, then Zod validation with the parse error fed back for self-correction |
 
 Forcing `tool_choice` guarantees Claude *calls* the tool, not that the input matches the schema — unlike OpenAI's `strict` mode, tool input is validated loosely, and a field occasionally comes back mistyped. Validation and retry therefore belong on the Claude path too, not only the open-model one.
+
+---
+
+## Figures
+
+Text extraction discards everything a paper *draws* rather than writes. Optionally, a vision model reads them back:
+
+```bash
+npm run generate -- paper.pdf --figures
+```
+
+Pages carrying a figure or table caption are rendered with `pdftoppm` and described one page at a time, and the descriptions join the source text the writer and the judge both read.
+
+```bash
+brew install poppler
+```
+
+| Variable | Purpose |
+|---|---|
+| `VISION_PROVIDER` | `anthropic` (default) · `openai` · `open` |
+| `VISION_MODEL` | Override the model; `open` defaults to `llava:7b` via Ollama |
+
+**Whole pages are rendered, not embedded images.** A figure pulled out of its page loses its caption, axis labels, and the sentence around it — exactly what makes it interpretable.
+
+**Descriptions are marked as derived.** They are model-generated, so they are a second fabrication surface: a vision model inventing a trend line is indistinguishable downstream from a language model inventing a result. They enter the source labelled *"produced by a vision model reading page N, not text quoted from the paper"*, the writer is told to treat them as weaker evidence and never to state a figure's number unless the description gives it explicitly, and the prompt demands transcription over interpretation with an explicit `NONE` for a page with nothing on it.
+
+Because they flow through the same `paperToText` everything else reads, the grounding checks and the LLM judge cover them with no special case: a claim about a diagram is verified by the same machinery as a claim about a paragraph.
+
+### What it is actually worth
+
+Measured on the Amazon Aurora paper, honestly:
+
+- The vision model transcribed Table 1 **exactly** — `Mirrored MySQL 780,000 / 7.4`, `Aurora with Replicas 27,378,000 / 0.95`.
+- But those numbers were **already in the extracted text**, since it is a text-based table. No gain there.
+- The real gap is diagram content: `Primary Instance`, `Replica Instance`, `EBS mirror`, `AZ 1` appear nowhere in the extracted text, and the *relationships* a diagram encodes are unrecoverable from flattened text at any quality of extraction.
+- Even so, an episode generated with figures enabled did not visibly draw on that content. A spoken summary operates above the level of box labels, which is arguably correct.
+
+So on this paper it costs roughly 16k extra input tokens for a marginal gain. It should pay off where results live in charts rather than prose — ablation plots, accuracy curves, papers whose text says "see Figure 4" — and on scanned or image-heavy PDFs. **The eval harness can settle that rather than intuition**: run `npm run eval` with and without figures and compare coverage. That comparison has not been run.
 
 ---
 
@@ -545,7 +590,7 @@ This was found the hard way. Running the Amazon Aurora paper (~17k tokens) throu
 ## Development
 
 ```bash
-npm test          # Vitest — 256 tests
+npm test          # Vitest — 265 tests
 npm run typecheck # tsc --noEmit
 npm run lint      # ESLint
 npm run format    # Prettier

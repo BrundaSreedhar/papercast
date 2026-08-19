@@ -51,7 +51,12 @@ export async function generateEpisode(
   const paperText = truncatedInput ? fullText.slice(0, maxInputChars) : fullText;
 
   const wordTarget = minutes * WORDS_PER_MINUTE;
-  const system = buildSystemPrompt({ minutes, wordTarget, showName });
+  const system = buildSystemPrompt({
+    minutes,
+    wordTarget,
+    showName,
+    hasFigures: (paper.figures?.length ?? 0) > 0,
+  });
   const user = buildUserContent(paperText, truncatedInput);
 
   const result = await provider.generateStructured({
@@ -78,6 +83,7 @@ export function buildSystemPrompt(args: {
   minutes: number;
   wordTarget: number;
   showName: string;
+  hasFigures?: boolean;
 }): string {
   const { minutes, wordTarget, showName } = args;
   const targetTurns = targetTurnCount(minutes);
@@ -88,6 +94,7 @@ FAITHFULNESS — this is the top priority:
 - Never invent numbers, results, author names, dataset names, or references. If a detail isn't in the paper, don't state it.
 - If the paper is ambiguous or silent on something, either omit it or say the paper does not specify — do not fill the gap with a guess.
 - Prefer the paper's own framing and terminology; spell out each acronym the first time you use it.
+- The source may end with a "Figures and tables" section describing what the paper's diagrams and tables show. Those descriptions were produced by a model reading the page, not quoted from the paper, so treat them as slightly weaker evidence: use them to explain how something is structured or what a result looked like, attribute them as what the figure shows, and do not state a number from a figure unless the description gives it explicitly.
 
 FORMAT AND LENGTH — both requirements are mandatory:
 - Produce a summary (problem, approach, key results, limitations), a list of concise key points, and the episode as a two-host dialogue.
@@ -96,7 +103,11 @@ FORMAT AND LENGTH — both requirements are mandatory:
 - The host guides the conversation and asks the questions a curious listener would ask. The guest has read the paper closely and answers them, one idea at a time.
 - The host opens with a brief welcome and closes with a short wrap-up. No music, sound effects, or stage directions.
 - Write spoken language: contractions, short sentences, no markdown, no bullet points inside the dialogue.
-- Cover the paper's core contributions in proportion to their importance rather than padding.
+- Cover the paper's core contributions in proportion to their importance rather than padding.${
+    args.hasFigures
+      ? "\n- The paper's figures have been described for you. Where a diagram or table makes something concrete — how components connect, what a measured trend looked like — draw on it, because a listener cannot see the page."
+      : ""
+  }
 
 SPEAKERS — the second thing you must not fabricate:
 - The show is called "${showName}". Use exactly that name if the opening names the show, and never invent a different show name, episode number, or reference to a previous episode.
