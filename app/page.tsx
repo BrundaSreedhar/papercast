@@ -23,6 +23,7 @@ export default function Home() {
   const [file, setFile] = useState<File | null>(null);
   const [minutes, setMinutes] = useState(4);
   const [verify, setVerify] = useState(false);
+  const [provider, setProvider] = useState("open");
   const [over, setOver] = useState(false);
 
   const [progress, setProgress] = useState<Progress | null>(null);
@@ -46,6 +47,7 @@ export default function Home() {
     body.set("pdf", file);
     body.set("minutes", String(minutes));
     body.set("verify", String(verify));
+    body.set("provider", provider);
 
     const res = await fetch("/api/jobs", { method: "POST", body });
     if (!res.ok) {
@@ -73,7 +75,7 @@ export default function Home() {
       setTimings(t.timings ?? []);
     });
     source.onerror = () => source.close();
-  }, [file, minutes, verify]);
+  }, [file, minutes, verify, provider]);
 
   const stageIndex = progress ? STAGES.indexOf(progress.stage as (typeof STAGES)[number]) : -1;
 
@@ -124,6 +126,14 @@ export default function Home() {
                 style={{ width: "4rem" }}
               />
               min
+            </label>
+            <label>
+              Model
+              <select value={provider} onChange={(e) => setProvider(e.target.value)}>
+                <option value="open">local (free)</option>
+                <option value="anthropic">Claude</option>
+                <option value="openai">OpenAI</option>
+              </select>
             </label>
             <label>
               <input

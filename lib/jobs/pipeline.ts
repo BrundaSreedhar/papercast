@@ -21,6 +21,7 @@ import { WhisperCppProvider, whisperAvailable } from "../eval/asr";
 import { verifyPerTurn } from "../eval/transcriptFidelity";
 import { estimateCost } from "../eval/report";
 import { toJobError } from "./errors";
+import { loadLedger, recordEpisode, saveLedger } from "../learning/index";
 import { overallPercent } from "./types";
 import type { JobStore } from "./store";
 
@@ -30,6 +31,8 @@ export interface RunJobInput {
   provider?: ProviderName;
   ttsProvider?: TTSProviderName;
   verify: boolean;
+  /** Identifier the study ledger files this paper under. */
+  paperId?: string;
   /** Where to write the finished audio, when audio is wanted. */
   audioPath?: string;
 }
@@ -115,6 +118,26 @@ export async function runJob(
           }),
       );
       transcriptRecall = fidelity.episodeRecall;
+    }
+
+    // Recording is best-effort: a study history is a nice-to-have, and failing
+    // to write it must never fail an episode that was produced successfully.
+    try {
+      await saveLedger(
+        recordEpisode(await loadLedger(), {
+          paperId: input.paperId ?? "paper",
+          paper,
+          episode: generated.episode,
+          provider: generated.provider,
+          model: generated.model,
+          minutes: input.minutes,
+          timings: audio.timings,
+          audioPath: input.audioPath,
+          transcriptRecall,
+        }),
+      );
+    } catch (err) {
+      console.warn(`[job ${jobId}] could not update the study ledger:`, err);
     }
 
     store.update(jobId, {

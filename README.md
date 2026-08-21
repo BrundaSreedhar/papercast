@@ -20,7 +20,7 @@ The interesting problem here is not generating audio. It is that a language mode
 | Injected audio corruptions detected | **5 / 5** |
 | Script wording verified present in the audio, by transcription | **96%** |
 | Judge variance across repeat runs — the noise floor for any claim above | **±2 pts** |
-| Unit tests | **265** |
+| Unit tests | **281** |
 
 Every number is reproducible from this repo: `npm run eval`, `npm run eval:validate`, `npm test`.
 
@@ -86,7 +86,7 @@ Everything under `lib/` is plain TypeScript with no framework dependency, which 
 | **P5** | Web app with a transcript synced to playback | ✅ Done |
 | **P6** | CI on the web build, deployed URL | ⬜ Planned |
 
-**The pipeline runs end to end — drop in a PDF, watch it work, listen with a transcript that follows along.** Covered by 265 unit tests. A deployed URL lands in P6.
+**The pipeline runs end to end — drop in a PDF, watch it work, listen with a transcript that follows along.** Covered by 281 unit tests. A deployed URL lands in P6.
 
 ---
 
@@ -290,6 +290,39 @@ Each provider reaches the same guaranteed shape by a different route:
 | **Open models** | Schema embedded in the prompt + JSON mode, then Zod validation with the parse error fed back for self-correction |
 
 Forcing `tool_choice` guarantees Claude *calls* the tool, not that the input matches the schema — unlike OpenAI's `strict` mode, tool input is validated loosely, and a field occasionally comes back mistyped. Validation and retry therefore belong on the Claude path too, not only the open-model one.
+
+---
+
+## Study ledger
+
+```bash
+npm run learn                                                  # what you have covered, and what is left
+npm run learn -- record ep.json --paper paper.pdf --timings t.json
+```
+
+Episodes are recorded to `learning.json` — a local file, because a study history is small, is inherently one person's, and gains nothing from a server. Jobs started through the web app record themselves.
+
+```
+📓  1 paper · 1 episode · 7 things learnt
+
+── Amazon Aurora: Design Considerations for High Throughput…
+   · [0:14] In cloud databases, the network has become the central bottleneck…
+   · [3:06] Aurora pushes redo log processing into a multi-tenant storage service…
+
+📚  Read next — cited by the papers you have studied:
+   2015  High performance transactions in deuteronomy
+   2014  Scalable atomic visibility with RAMP Transactions
+```
+
+Three things, each derived from something the pipeline already produces rather than from a model asked what you learnt:
+
+**What you covered.** The judge already decomposes every episode into atomic claims and verifies each against the paper; it scored them and threw them away. Those supported claims *are* the record. Because synthesis also records exact per-turn timings, **each item carries the moment in the audio where it was discussed** — the `[0:14]` above is a real offset, not an estimate. When no evaluation has run, key points are used instead and marked `stated` rather than `verified`, so the history exists for every episode and improves for evaluated ones.
+
+**What is missing.** Coverage scoring already compares an episode against a paper's annotated key contributions. A contribution no episode conveyed is a concrete gap — a fact about what you were not told, not a guess about what you failed to absorb. Any later episode that covers it closes the gap.
+
+**What to read next.** Extraction strips the bibliography so the model cannot fabricate citations from a list it was shown — but discarding it entirely loses the one *grounded* answer to this question. References are now parsed and kept beside the text rather than in it, and suggestions are ranked by how many studied papers cite a work. A paper cited by several things you have read is, by those authors' own reckoning, foundational to the area.
+
+That constraint is the point. The obvious version asks a model what to read next, which is unfalsifiable and would undo the property the rest of this project is built on. **Every suggestion here traces to a specific citation in a paper you actually have.**
 
 ---
 
@@ -590,7 +623,7 @@ This was found the hard way. Running the Amazon Aurora paper (~17k tokens) throu
 ## Development
 
 ```bash
-npm test          # Vitest — 265 tests
+npm test          # Vitest — 281 tests
 npm run typecheck # tsc --noEmit
 npm run lint      # ESLint
 npm run format    # Prettier
