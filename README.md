@@ -1,6 +1,6 @@
 # Paper → Podcast
 
-Turn an academic paper into a two-host podcast episode that says **only what the paper actually says** — and prove it.
+Turn an academic paper into a two-host podcast episode that says **only what the paper actually says**, and prove it.
 
 ```bash
 npm run dev     # drop a PDF at localhost:3000
@@ -12,37 +12,39 @@ The interesting problem here is not generating audio. It is that a language mode
 
 ## What it does, measured
 
-| | |
-|---|--:|
-| Faithfulness of a clean episode, scored claim by claim | **93%** |
-| Faithfulness of a known-hallucinated episode (the harness must catch it) | **13%** |
-| Injected text corruptions detected | **9 / 9** |
-| Injected audio corruptions detected | **5 / 5** |
-| Script wording verified present in the audio, by transcription | **96%** |
-| Judge variance across repeat runs — the noise floor for any claim above | **±2 pts** |
-| Unit tests | **256** |
+|                                                                          |            |
+| ------------------------------------------------------------------------ | ---------: |
+| Faithfulness of a clean episode, scored claim by claim                   |    **93%** |
+| Faithfulness of a known-hallucinated episode (the harness must catch it) |    **13%** |
+| Injected text corruptions detected                                       |  **9 / 9** |
+| Injected audio corruptions detected                                      |  **5 / 5** |
+| Script wording verified present in the audio, by transcription           |    **96%** |
+| Judge variance across repeat runs, the noise floor for any claim above   | **±2 pts** |
+| Unit tests                                                               |    **345** |
 
 Every number is reproducible from this repo: `npm run eval`, `npm run eval:validate`, `npm test`.
 
 ---
 
-## Why it is not just an API call
+## Tech stack
 
-**Faithfulness is measured, not asserted.** An [LLM judge](#evaluation) decomposes each episode into atomic claims and marks every one `supported`, `unsupported`, or `contradicted` against a quoted passage. A single score out of ten cannot be argued with; a list of verdicts with evidence can be read line by line.
-
-**The grader is itself validated.** Known-bad fixtures, [mutation testing](#sensitivity-mutation-testing) for sensitivity, and [measured variance](#judge-variance) so a three-point difference is never reported as a result. The most useful fixture is a real failure: an episode about MapReduce itemset mining that a local model produced from the Amazon Aurora paper after its context window silently truncated.
-
-**Silent failure is designed against.** The pipeline refuses to generate when the model did not receive the whole paper, refuses to trust audio it has not checked, and [transcribes the finished episode back](#verifying-what-the-audio-actually-says) to confirm the words are really there. Each of those guards exists because the failure happened.
-
-**Fabrication is not only about facts.** Left unconstrained, models name the show, hand the speakers doctorates, and slip into "our approach" as though the presenters wrote the paper. All three are [forbidden and checked](#two-layers).
-
-**Model-agnostic, and it earns the abstraction.** Claude via forced tool-use, OpenAI via strict `json_schema`, and open models via JSON coercion with validation-retry — because open endpoints often have neither. Claude turned out to need the retry path too: forcing `tool_choice` guarantees the tool is *called*, not that its input matches the schema.
-
-**It runs free.** Local Ollama for the script, [Piper](#installing-piper) for the voices, whisper.cpp for verification — a complete episode with no account anywhere. Hosted providers are a config change.
+| Area            | Choice                                                              | Why                                                                                     |
+| --------------- | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Language        | TypeScript, strict, with `noUncheckedIndexedAccess`                 | The whole pipeline is data shaping, and the schema is the contract                      |
+| Schema          | Zod, with `zod-to-json-schema`                                      | One definition drives validation, tool definitions, and JSON Schema for three providers |
+| Frontier models | `@anthropic-ai/sdk`, `openai`                                       | Native structured output on both, by different mechanisms                               |
+| Open models     | Any OpenAI-compatible endpoint (Ollama, Together, Groq, OpenRouter) | Lets the whole thing run with no account anywhere                                       |
+| PDF             | `pdf-parse` for text; poppler (`pdftotext`, `pdftoppm`) for figures | Text extraction is the only part that wants a battle-tested library                     |
+| Speech          | Piper (local neural), macOS `say`, OpenAI TTS                       | Behind one interface, so the free path is the default and not an afterthought           |
+| Transcription   | whisper.cpp, local, CPU                                             | Used to check the audio against the script, so it must be free to run often             |
+| Observability   | OpenTelemetry, GenAI semantic conventions                           | Portable to any OTLP backend rather than to one vendor's UI                             |
+| Web             | Next.js 16, React 19                                                | Route handlers stream job progress; the app is a thin shell over `lib/`                 |
+| API             | Express                                                             | The same pipeline behind a second transport, which is what proved it was framework-free |
+| Tests           | Vitest, no network, no filesystem                                   | Providers are faked through their interfaces, so the suite runs in about three seconds  |
 
 ---
 
-## Architecture
+## System architecture
 
 ```
    PDF
@@ -58,6 +60,11 @@ Every number is reproducible from this repo: `npm run eval`, `npm run eval:valid
     │                          │
     │                          └──► Layer 1  deterministic checks   free, every commit
     │                          └──► Layer 2  LLM judge              faithfulness · coverage
+    │                                   │
+    │  ┌────────────────────────────────┘
+    │  ▼
+ refine ──────────────► rewrite the turns that failed, re-judge, keep the better
+    │                   one   (opt-in)
     ▼
  TTSProvider ─────────► Piper · macOS say · OpenAI
     │
@@ -70,203 +77,11 @@ Every number is reproducible from this repo: `npm run eval`, `npm run eval:valid
   Web app ────────────► streamed progress, transcript synced to playback
 ```
 
-Everything under `lib/` is plain TypeScript with no framework dependency, which is why the same pipeline runs behind a CLI, an Express server, and Next.js route handlers unchanged.
+### Everything is behind an interface
 
----
+Four model interfaces carry the whole system: `LLMProvider`, `VisionProvider`, `TTSProvider`, and `ASRProvider`. Each is one method reached through one factory. The rest of the application depends on the interface alone, so a local voice, a hosted API, and a frontier model are interchangeable.
 
-## Status
-
-| Phase | Scope | State |
-|---|---|---|
-| **P0** | Foundations, secrets hygiene, toolchain | ✅ Done |
-| **P1** | Extraction → provider abstraction → dialogue → CLI | ✅ Done |
-| **P2** | LLM-judge evals + frontier-vs-open comparison | ✅ Done |
-| **P3** | Audio: chunked per-speaker TTS with exact timings | ✅ Done |
-| **P4** | Async job model + streamed progress | ✅ Done |
-| **P5** | Web app with a transcript synced to playback | ✅ Done |
-| **P6** | CI on the web build, deployed URL | ⬜ Planned |
-
-**The pipeline runs end to end — drop in a PDF, watch it work, listen with a transcript that follows along.** Covered by 256 unit tests. A deployed URL lands in P6.
-
----
-
-## Quick start
-
-### 1. Install
-
-```bash
-npm install
-```
-
-Requires Node 18+ (developed on Node 24).
-
-### 2. Configure
-
-```bash
-cp .env.example .env
-```
-
-Then edit `.env` and set `LLM_PROVIDER` plus the credentials for whichever provider you want:
-
-| Variable | Purpose |
-|---|---|
-| `LLM_PROVIDER` | `anthropic` \| `openai` \| `open` |
-| `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` | Claude credentials and model id |
-| `OPENAI_API_KEY` / `OPENAI_MODEL` | OpenAI credentials and model id |
-| `OPEN_BASE_URL` / `OPEN_API_KEY` / `OPEN_MODEL` | Any OpenAI-compatible endpoint |
-
-`.env` is gitignored; `.env.example` is the committed template.
-
-### 3. Generate an episode
-
-```bash
-npm run generate -- path/to/paper.pdf
-```
-
-The CLI prints the summary, key points, and the first few dialogue turns, then writes the complete episode as JSON.
-
-### 4. Turn it into audio
-
-```bash
-npm run audio -- paper.episode.json --m4a
-```
-
-Two voices, one file, plus a per-turn timing map. On macOS this needs no API key and no ffmpeg — see [Audio](#audio).
-
-### 5. Or use the web app
-
-```bash
-npm run dev
-```
-
-Drop a PDF at `localhost:3000`, watch each stage as it happens, then listen with a transcript that highlights the line being spoken. See [Web app](#web-app).
-
----
-
-## Usage
-
-```bash
-# Default provider from .env, 10-minute target
-npm run generate -- paper.pdf
-
-# Shorter episode, explicit provider, custom output path
-npm run generate -- paper.pdf --minutes 6 --provider anthropic --out episode.json
-```
-
-| Flag | Default | Description |
-|---|---|---|
-| `--minutes N` | `10` | Target spoken length; drives the word and token budget |
-| `--provider` | `LLM_PROVIDER` from `.env` | `anthropic` \| `openai` \| `open` |
-| `--out FILE` | `<paper>.episode.json` | Where to write the full result |
-
-### Running fully free and offline
-
-With [Ollama](https://ollama.com) installed locally, no API key is needed. `qwen2:7b` is the default open model, so this works with no further configuration:
-
-```bash
-ollama pull qwen2:7b
-```
-
-```bash
-npm run generate -- paper.pdf --provider open --minutes 4
-```
-
-**Choosing an open model.** Set `OPEN_MODEL` to anything your host can run — the constraint is local RAM:
-
-| Model | Approx. RAM | Notes |
-|---|---|---|
-| `qwen2:7b` | ~5 GB | Default; small but capable, fine for smoke tests |
-| `qwen2.5:14b` | ~9 GB | Better quality; comfortable on a 16–18 GB machine |
-| `llama3.3:70b` | ~40 GB+ | Needs a large workstation |
-
-A hosted OpenAI-compatible tier (Together, Groq, OpenRouter) removes the RAM constraint entirely — point `OPEN_BASE_URL` at it and set `OPEN_API_KEY`. That is the better route for the P2 eval comparison, where a stronger open model makes the frontier-vs-open result more meaningful.
-
-> **Raise Ollama's context window before using it on full papers.** Ollama gives every model a 4,096-token context regardless of its real capacity — far too small for a typical paper, and it ignores `num_ctx` sent over the OpenAI-compatible API. Bake the larger context into a derived model instead:
->
-> ```bash
-> ollama create qwen2:7b-32k -f ollama/qwen2-32k.Modelfile
-> ```
->
-> Then set `OPEN_MODEL=qwen2:7b-32k`. Measured effect on this repo's own runs: **4,096 → 25,025** input tokens actually processed.
->
-> Setting `OLLAMA_CONTEXT_LENGTH` and restarting the server is the commonly suggested fix, but it does **not** work on macOS — the menu-bar app supervises `ollama serve` and respawns it without that variable. The derived model needs no service restart, survives reboots, reuses the base weights (no extra disk), and leaves your other models untouched.
->
-> Without this the run aborts with a `ContextTruncationError` rather than producing an episode about the wrong subject.
-
-### Output shape
-
-```jsonc
-{
-  "episode": {
-    "summary": "…",
-    "keyPoints": ["…"],
-    "turns": [
-      { "speaker": "host",  "text": "…" },
-      { "speaker": "guest", "text": "…" }
-    ]
-  },
-  "provider": "anthropic",
-  "model": "claude-sonnet-5",
-  "usage": { "inputTokens": 0, "outputTokens": 0 },
-  "retries": 0,
-  "truncatedInput": false
-}
-```
-
----
-
-## Code layout
-
-```
-lib/
-├── config/env.ts          Typed env loading and provider selection
-├── pdf/
-│   └── extract.ts         PDF → { title, abstract, sections[] }, noise stripped
-├── tts/
-│   ├── wav.ts             RIFF parsing, joining, exact durations
-│   ├── chunk.ts           Sentence-aware splitting for input limits
-│   ├── macSay.ts          macOS `say` backend
-│   ├── piper.ts           Piper open-source neural backend (default)
-│   ├── openaiTts.ts       OpenAI speech backend
-│   └── synthesize.ts      Turns → one file + per-turn timings
-├── llm/
-│   ├── schema.ts          The Zod episode schema — single source of truth
-│   ├── types.ts           LLMProvider interface
-│   ├── anthropic.ts       Claude, via forced tool-use
-│   ├── openai.ts          OpenAI, via strict json_schema
-│   ├── openCompatible.ts  Open models, via JSON coercion + validation-retry
-│   ├── contextGuard.ts    Aborts when the server silently drops input
-│   ├── index.ts           Provider factory
-│   └── generateEpisode.ts Prompt construction and orchestration
-└── eval/
-    ├── checks.ts           Deterministic checks (Layer 1)
-    ├── judge.ts            Claim extraction, verification, coverage (Layer 2)
-    ├── judgeSchema.ts      Strict-mode-safe schemas for the judge passes
-    ├── dataset.ts          Paper discovery, annotations, fixture loading
-    ├── audioChecks.ts      Deterministic checks on synthesized audio
-    ├── asr.ts              Speech recognition behind an interface
-    ├── transcriptFidelity.ts  What the audio says vs what the script said
-    ├── mutate.ts           Deliberate corruptions for sensitivity testing
-    ├── mutateAudio.ts      Audio corruptions for the same
-    ├── report.ts           Markdown comparison report and cost estimates
-    └── fixtures/           Captured episodes with known verdicts
-
-├── jobs/
-│   ├── types.ts           Stage machine and progress weighting
-│   ├── store.ts           In-memory jobs with subscriptions
-│   ├── errors.ts          Internal failures → user-safe messages
-│   └── pipeline.ts        Paper → episode → audio, reporting as it goes
-
-src/cli.ts                 Generate a single episode
-src/server.ts              HTTP API with server-sent progress
-src/audio.ts               Synthesize an episode into audio
-src/eval.ts                Generate + score across providers
-src/validate-judge.ts      Validate the judge before trusting it
-```
-
-### The provider interface
-
-One method is all the rest of the application depends on:
+The LLM interface is a single method:
 
 ```ts
 interface LLMProvider {
@@ -276,288 +91,182 @@ interface LLMProvider {
 
 Each provider reaches the same guaranteed shape by a different route:
 
-| Provider | Mechanism |
-|---|---|
-| **Claude** | Schema registered as a tool, `tool_choice` forcing the call, then Zod validation with failures returned as a `tool_result` for in-place correction |
-| **OpenAI** | Strict `response_format: json_schema`, enforced server-side |
-| **Open models** | Schema embedded in the prompt + JSON mode, then Zod validation with the parse error fed back for self-correction |
+| Provider        | Mechanism                                                                                                                                          |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Claude**      | Schema registered as a tool, `tool_choice` forcing the call, then Zod validation with failures returned as a `tool_result` for in-place correction |
+| **OpenAI**      | Strict `response_format: json_schema`, enforced server-side                                                                                        |
+| **Open models** | Schema embedded in the prompt plus JSON mode, then Zod validation with the parse error fed back for self-correction                                |
 
-Forcing `tool_choice` guarantees Claude *calls* the tool, not that the input matches the schema — unlike OpenAI's `strict` mode, tool input is validated loosely, and a field occasionally comes back mistyped. Validation and retry therefore belong on the Claude path too, not only the open-model one.
+That single chokepoint is also what makes the system observable. Wrapping the two model factories instruments every inference call in the project, with no change to any call site and no change to any function signature.
 
----
+### Nothing in the library layer prints
 
-## Audio
-
-```bash
-npm run audio -- paper.episode.json               # WAV + timings
-npm run audio -- paper.episode.json --m4a         # also compressed
-npm run audio -- paper.episode.json --provider openai --gap 500
-```
-
-| Flag | Default | Description |
-|---|---|---|
-| `--provider` | auto | `piper` (open source), `say` (macOS), or `openai` |
-| `--gap MS` | `350` | Silence between turns |
-| `--out FILE` | input path | Output stem for `.wav` / `.timings.json` |
-| `--m4a` | off | Also emit AAC via `afconvert` |
-| `--verify` | off | Transcribe the audio back and check it against the script |
-| `--target N` | — | Requested minutes, to check the episode actually lasts that long |
-
-Three backends, all behind one interface:
-
-| Backend | Voices | Cost | Setup |
-|---|---|---|---|
-| **`piper`** | Open-source neural (lessac / ryan) | free | one-time model download |
-| `say` | macOS built-in (Samantha / Daniel) | free | none |
-| `openai` | `gpt-4o-mini-tts` (nova / onyx) | ~$0.09/episode | API key |
-
-With no `--provider` and no `TTS_PROVIDER`, the runner **prefers Piper when its models are installed and falls back to `say`** — so a fresh checkout still produces audio, and an installed Piper is used without remembering a flag.
-
-Measured on the Aurora episode: **5:32 via Piper in 34s**, or **6:04 via `say` in 22s**. Both entirely local, no account anywhere, no ffmpeg.
-
-### Installing Piper
-
-[Piper](https://github.com/rhasspy/piper) is MIT-licensed and runs on CPU. It needs a Python environment and two voice models (~60 MB each), both kept out of the repository:
-
-```bash
-uv venv --python 3.12 .venv-tts && uv pip install --python .venv-tts piper-tts
-```
-
-```bash
-.venv-tts/bin/python -m piper.download_voices en_US-lessac-medium --data-dir .voices
-```
-
-```bash
-.venv-tts/bin/python -m piper.download_voices en_US-ryan-medium --data-dir .voices
-```
-
-Override paths with `PIPER_BIN`, `PIPER_HOST_VOICE`, and `PIPER_GUEST_VOICE`. Piper emits 22.05 kHz 16-bit mono — the same format as `say` — so it lands on the existing joining and timing path unchanged.
-
-Segments are joined in pure TypeScript by parsing RIFF chunks and concatenating PCM. That avoids an ffmpeg dependency and buys something better: **exact per-turn timings derived from sample counts** rather than probed. The computed total matches macOS `afinfo` to the millisecond (364.004s), and those timings are what will drive transcript highlighting in P5.
-
-Each **turn** is a synthesis call, chunked further at sentence boundaries when it exceeds the backend's input limit. This is the fix for the original bug: the first version sent an entire script in one call, was rejected past 4,096 characters, swallowed the error, and returned a transcript with `audioUrl: null` — the headline feature missing for exactly the long episodes it existed to serve. Exceeding the limit is now impossible by construction rather than caught.
-
-Sentence splitting is decimal-aware, since a naive split treats the period in "5.38 milliseconds" as a sentence end and cuts mid-figure — audible as an unnatural break, because the halves are synthesized with independent prosody.
-
-Joining rejects mismatched sample rates rather than concatenating them, which would otherwise play back at the wrong speed and sound like corruption rather than a bug.
-
-### Checking the audio
-
-Synthesis has one failure mode that matters and is easy to miss: **text silently going missing**. A call that drops a chunk or returns an empty buffer still yields a file that plays perfectly, and nobody re-reads a transcript against a waveform. So every run is checked before it is announced as finished:
-
-| Check | Catches |
-|---|---|
-| `audio-parses` | Unreadable or empty output |
-| `turns-voiced` | A turn with no audio at all |
-| `timeline-order` | Overlapping or out-of-order turns |
-| `timeline-matches-audio` | Timings drifting from the file's real length |
-| `silent-turns` | A turn with text but no audible speech (RMS) |
-| `speech-rate` | **Dropped text** — fifty words in two seconds |
-| `episode-duration` | An episode far shorter than requested |
-
-`speech-rate` is the cheap proxy for the ASR round-trip: if a turn's audio is far too short for its word count, content did not survive synthesis. That is invisible on playback and undetectable from the file alone.
-
-Sensitivity is measured the same way as the text layer — the audio is deliberately corrupted (silence a turn, truncate the file, desync the timeline, overlap turns, drop a timing) and each corruption names the check that must catch it. **5 of 5 detected, no false positives on the control.** The real Aurora episode scores 100% with no errors or warnings, which also calibrates the speech-rate thresholds against genuine speech rather than a synthetic tone.
-
-What is deliberately *not* checked: prosody, naturalness, and pronunciation. Those need a human or a speech model, and asserting them cheaply would be theatre.
-
-### Verifying what the audio actually says
-
-`speech-rate` *infers* text loss from a turn being too short. `--verify` **measures** it: the audio is transcribed back with [whisper.cpp](https://github.com/ggml-org/whisper.cpp) and compared to the script, word for word.
-
-```bash
-brew install whisper-cpp
-curl -L -o .models/ggml-small.en.bin \
-  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin
-```
-
-```bash
-npm run audio -- paper.episode.json --verify
-```
-
-Measured on the Aurora episode: **96% of the script recognized in the audio**, no turns flagged. The remaining 4% is recognition noise — "MySQL" heard as "My SQL" — not missing speech.
-
-Verification runs **per turn**, using the timings synthesis already produced, and splits any turn longer than 20 seconds. Both details are load-bearing, and both were found by disbelieving a bad number rather than reasoning:
-
-- Transcribing the whole episode in one pass reported **61%** and flagged three turns. Extracting those turns and transcribing them individually showed the audio was word-perfect. Recognizers skip material on long recordings.
-- Per-turn transcription then flagged a single turn at **11%** — a 31-second turn that crossed Whisper's 30-second window, returning its first sentence and last three words. Split in half, the same audio transcribed verbatim.
-
-So the checker needed calibrating before it could be trusted, exactly as the LLM judge did. The per-turn timings from P3 are what make it possible at all: without exact boundaries there are no short clips to hand the recognizer.
-
----
-
-## Web app
-
-```bash
-npm run dev
-```
-
-Upload a paper, watch the stages stream past, then play the episode with a transcript that follows along. Clicking any line seeks to it.
-
-The transcript sync uses the **exact per-turn boundaries recorded during synthesis** — nothing is estimated or force-aligned after the fact. Measured on a live run: the last turn ends at 127.9 s and the audio is 127.9 s long, and clicking a line seeks to within a tenth of a second of where that line begins.
-
-Progress arrives over server-sent events rather than polling, and reloading mid-episode replays the whole history rather than showing an empty bar.
-
-**Why it is not serverless.** A job takes around eighty seconds — longer than a serverless function may run — and the job store is process memory, which separate invocations would not share. The app therefore wants a long-lived Node process (Render, Railway, Fly, a container) rather than Vercel's default. `lib/jobs` is storage-agnostic, so moving the store to Redis is what would unlock a serverless deploy; the constraint is stated rather than discovered at deploy time.
-
----
-
-## API
-
-```bash
-npm run serve
-```
-
-```bash
-curl -F pdf=@paper.pdf -F minutes=4 localhost:8000/api/jobs
-curl -N localhost:8000/api/jobs/<id>/stream
-```
-
-| Route | Purpose |
-|---|---|
-| `POST /api/jobs` | Start a job; returns an id immediately |
-| `GET /api/jobs/:id/stream` | Progress as server-sent events |
-| `GET /api/jobs/:id` | Current state, cost, and events |
-| `GET /api/jobs/:id/audio` | Finished audio |
-| `GET /api/jobs/:id/transcript` | Episode plus per-turn timings |
-
-Generation and synthesis each take tens of seconds, and a minute of silence is indistinguishable from a hang — so the work is a job with a timeline rather than a request that blocks. A live run:
-
-```
-    0%  parsing       Reading the paper
-    4%  parsing       Parsed 49 sections, 9435 words
-    4%  scripting     Writing the episode
-   50%  scripting     Wrote 19 turns
-   52%  synthesizing  Recording turn 1 of 19
-   …
-   85%  synthesizing  Recorded 3.6 minutes · 0 audio errors
-  100%  done          Episode ready
-```
-
-Percentages are weighted by how long each stage actually takes, measured from real runs — scripting is roughly half the wall clock, so finishing it lands at 50% rather than at an equal-thirds 33%.
-
-**A late subscriber gets the whole story.** Connecting after work has started replays every event first, so a page refresh mid-job does not leave the user staring at a blank progress bar.
-
-**Errors are translated before they reach a client.** A raw provider message can carry request details and tells the reader nothing actionable, so each known failure maps to a stable code, a plain description, and a remedy: `context_truncated`, `output_truncated`, `auth_failed`, `rate_limited`, `provider_unreachable`, `unreadable_input`. Anything unrecognized becomes `internal` and the detail stays in the server log.
-
-Everything above lives in `lib/jobs/` and knows nothing about HTTP; `src/server.ts` is transport only, so the same pipeline runs unchanged behind a Next.js route handler in P5.
-
-**Known limit:** jobs are held in memory and lost on restart. The store is three methods behind an interface, so Redis or a database is a drop-in — but the demo does not pretend otherwise.
+Progress leaves a library through injected callbacks, never `console`. Failures leave as typed errors or as structured state written into a store. The one place that prints is the entrypoint. This is why the same pipeline runs unchanged behind a CLI, an Express server, and Next.js route handlers, and why it can be tested without a filesystem or a network.
 
 ---
 
 ## Evaluation
 
 ```bash
-npm run eval                  # generate + score on every provider with credentials
-npm run eval:validate         # check the judge itself against known-bad episodes
+npm run eval                          # generate and score on every provider with credentials
+npm run eval:validate                 # check the judge itself against known-bad episodes
 npm run eval:validate -- --repeat 3   # measure judge variance
 ```
 
-### Two layers
+### Two layers, cheapest first
 
-**Deterministic checks** run first, free and instantly, on every commit: schema, speaker alternation, length targets, show name, honorifics, claimed expertise, author impersonation, naming, and whether proper nouns and figures trace back to the paper. Most fabrication is decidable without a model, and sending an LLM to do a regex's job is slow and expensive.
+**Deterministic checks** run first, free and instantly, on every commit: schema, speaker alternation, length targets, show name, honorifics, claimed expertise, author impersonation, naming, and whether proper nouns trace back to the paper. Most fabrication is decidable without a model, and sending a language model to do a regex's job is slow and expensive.
 
-**An LLM judge** handles what genuinely needs judgement. Faithfulness is scored by decomposition, not by asking a model for a rating out of ten: the transcript is split into atomic claims, and each is marked `supported`, `unsupported`, or `contradicted` against a quoted passage. A list of verdicts with evidence can be read and argued with; a single number cannot.
+**An LLM judge** handles what genuinely needs judgement. Faithfulness is scored by decomposition, not by asking a model for a rating out of ten: the transcript is split into atomic claims, and each is marked `supported`, `unsupported`, or `contradicted` against a quoted passage. A single number cannot be argued with. A list of verdicts with evidence can be read line by line.
 
-Only claim verification needs the full paper, so it is passed as cacheable context. Judging several providers on one paper pays for the paper once — measured at 25,762 tokens written to cache, then served from it twice.
+Only claim verification needs the full paper, so it is passed as cacheable context. Judging several providers against one paper pays for the paper once.
 
-### Validating the judge
+### The grader is itself validated
 
-An eval is only worth its output if the grader is sound, so `eval:validate` runs against captured episodes with known verdicts before any comparison is trusted. The most useful case is not synthetic: it is a real episode about *MapReduce frequent-itemset mining* that a local model produced from the Amazon Aurora paper after its context window silently truncated the input.
+An eval is only worth its output if the grader is sound, so the judge runs against captured episodes with known verdicts before any comparison is trusted.
 
-| Fixture | Faithfulness | Hallucination | Coverage |
-|---|--:|--:|--:|
-| `clean-claude` | 93% | 4% | 100% |
-| `fabricated-personas` | 91% | 0% | 80% |
-| `hallucinated-mapreduce` | **13%** | 47% | 0% |
+| Fixture                  | Faithfulness | Hallucination | Coverage |
+| ------------------------ | -----------: | ------------: | -------: |
+| `clean-claude`           |          93% |            4% |     100% |
+| `fabricated-personas`    |          91% |            0% |      80% |
+| `hallucinated-mapreduce` |      **13%** |           47% |       0% |
 
-A judge that rates that last row as faithful is broken. This one places it seven times below the faithful episodes.
+The most useful fixture is not synthetic. It is a real episode about _MapReduce frequent-itemset mining_ that a local model produced from the Amazon Aurora paper after its context window silently truncated the input. A judge that rates that row as faithful is broken. This one places it seven times below the faithful episodes.
 
-Inspecting individual verdicts also caught a bug in the harness rather than the model. Decomposing *"the old bottleneck goes away, but the cost moves to the network"* into its first half alone produced a claim the paper genuinely contradicts — an artifact of splitting, not a hallucination. Extraction now keeps contrastive and qualified statements intact, which moved the clean episode from 88% to 93%.
+Reading individual verdicts also caught a bug in the harness rather than the model. Decomposing _"the old bottleneck goes away, but the cost moves to the network"_ into its first half alone produced a claim the paper genuinely contradicts, an artifact of splitting rather than a hallucination. Extraction now keeps contrastive and qualified statements intact, which moved the clean episode from 88% to 93%.
 
-### Sensitivity: mutation testing
+### Sensitivity, by mutation testing
 
-Fixtures prove the checks catch the failures already seen. They say nothing about sensitivity in general, and hand-writing more cases only tests the failures one already thought of. So a clean episode is corrupted one fault at a time — a figure swapped for one the paper never states, a fabricated system introduced, a doctorate handed out, authorship claimed, the show renamed, alternation broken, the dialogue truncated — and each corruption names the check that must catch it.
+Fixtures prove the checks catch failures already seen. They say nothing about sensitivity in general, and hand-writing more cases only tests the failures somebody already thought of. So a clean episode is corrupted one fault at a time: a figure swapped for one the paper never states, a fabricated system introduced, a doctorate handed out, authorship claimed, the show renamed, alternation broken, the dialogue truncated. Each corruption names the check that must catch it.
 
-**All 9 injected corruptions are detected, with no false positives on the uncorrupted control.** The suite reports that as a rate, so a regression in a regex shows up as a number rather than a mysteriously passing build. It needs no API key and runs in CI.
+All nine injected corruptions are detected, with no false positives on the uncorrupted control. The suite reports that as a rate, so a regression in a regex shows up as a number rather than a mysteriously passing build. It needs no API key and runs in CI.
 
 ### Judge variance
 
-Repeated grading of the same episode, `claude-sonnet-5`, three runs each:
+Repeated grading of the same episode by `claude-sonnet-5`, three runs each:
 
-| Fixture | Mean | Spread |
-|---|--:|--:|
-| `clean-claude` | 94% | 2.0 pts |
-| `fabricated-personas` | 91% | 0.0 pts |
-| `hallucinated-mapreduce` | 12% | 8.2 pts |
+| Fixture                  | Mean |  Spread |
+| ------------------------ | ---: | ------: |
+| `clean-claude`           |  94% | 2.0 pts |
+| `fabricated-personas`    |  91% | 0.0 pts |
+| `hallucinated-mapreduce` |  12% | 8.2 pts |
 
-**A gap of two or three points between models is noise.** Differences are only reported as real when they exceed this.
+**A gap of two or three points between models is noise.** Differences are only reported as real when they exceed it.
 
-### Results
+### Results, and why the headline number misleads
 
 Amazon Aurora paper, 4-minute episode, judged by `claude-sonnet-5`:
 
-| Generator | Faithful | Halluc. | Coverage | Compliance | Cost | Time |
-|---|--:|--:|--:|--:|--:|--:|
-| `claude-sonnet-5` | 91% | 4% | **100%** | 100% | $0.245 | 48s |
-| `qwen2:7b-32k` (local) | 94% | 4% | 80% | 100% | free | 174s |
+| Generator              | Faithful | Halluc. | Coverage | Compliance |   Cost | Time |
+| ---------------------- | -------: | ------: | -------: | ---------: | -----: | ---: |
+| `claude-sonnet-5`      |      91% |      4% | **100%** |       100% | $0.245 |  48s |
+| `qwen2:7b-32k` (local) |      94% |      4% |      80% |       100% |   free | 174s |
 
-Read carefully, because the headline number is the misleading one. The open model's 3-point faithfulness lead sits inside the judge's 2-point noise band and should be treated as a tie. The real difference is **coverage**: the local model omitted one of the paper's five key contributions — that an asynchronous scheme based on log sequence numbers replaces two-phase commit — while Claude conveyed all five in roughly four times the output.
+The open model's three-point faithfulness lead sits inside the judge's two-point noise band and should be treated as a tie. The real difference is coverage: the local model omitted one of the paper's five key contributions, that an asynchronous scheme based on log sequence numbers replaces two-phase commit, while Claude conveyed all five.
 
 That is the trap in scoring faithfulness alone. **An episode that says less has less to be wrong about**, and a model that says nothing at all scores perfectly. Coverage is what stops faithfulness from rewarding silence, and the two belong in the same table.
 
-Both `results/*.md` reports flag when the judge and generator are the same model. Models favour their own output, so a self-judged score is an upper bound, not a neutral measurement; `JUDGE_PROVIDER` exists to break that tie once a second provider is available.
-
-### Adding a paper
-
-Drop a PDF into `sample_papers/` — it is discovered automatically — then add its key contributions to `ANNOTATIONS` in [`lib/eval/dataset.ts`](lib/eval/dataset.ts).
-
-Without annotations, coverage is reported as **not measured** rather than 0%. That distinction matters: scoring an unannotated paper 0% would read as "the episode covered nothing" and quietly condemn every newly added paper. The runner warns when annotations are missing.
-
-### Known limits
-
-- One paper. A comparison across a single document shows the harness works, not which model is better; more papers are the obvious next step.
-- Claude currently judges its own output on the frontier row, flagged in every report.
-- Coverage depends on hand-annotated contributions, so it exists only for annotated papers.
-- Mutation testing currently exercises the deterministic layer only; the judge's own detection rate is not yet measured.
-
-**Full design rationale:** [docs/evaluation-design.md](docs/evaluation-design.md).
+Reports also flag when the judge and the generator are the same model. Models favour their own output, so a self-judged score is an upper bound rather than a neutral measurement.
 
 ---
 
-## Design decisions
+## Tracing
 
-**Why a provider abstraction rather than one SDK.** With only Claude and GPT the abstraction would be a formality — both support structured output natively. Adding an open model forces it to earn its keep: many OSS endpoints have no reliable tool-use or JSON-schema support, so the adapter has to coerce and validate. That coercion path is the part worth reading in `openCompatible.ts`.
+Every model call emits an OpenTelemetry span. `--trace` prints the tree when a run finishes:
 
-**Why section-aware extraction and not full map-reduce chunking.** Modern context windows swallow most papers whole, so chunking a typical paper would be engineering theater. The real quality win is *what* you send, not how you split it — dropping the reference list and appendix measurably reduces fabricated citations. Papers that genuinely exceed the budget are truncated and flagged (`truncatedInput`) rather than silently cut.
-
-**Why structured output instead of parsing text.** The original prototype asked for one blob of prose and split it with regex, which needed a second model call whenever the markers didn't appear. A schema removes the failure mode entirely.
-
-**Why the pipeline fails loudly on context overflow.** Self-hosted endpoints cap the context window well below the model's real limit and do not error when a prompt exceeds it — they quietly drop the overflow. Ollama, for instance, defaults to 4,096 tokens no matter what the model supports, and ignores `num_ctx` over its OpenAI-compatible route.
-
-This was found the hard way. Running the Amazon Aurora paper (~17k tokens) through a local 7B model produced a fluent, well-structured episode about *frequent itemset mining with MapReduce* — a topic found nowhere in the paper. The model had seen roughly a quarter of the input and confabulated the rest, with no error anywhere in the stack.
-
-`lib/llm/contextGuard.ts` now compares the tokens sent against the tokens the server reports processing and aborts on a large shortfall. For a faithfulness-first system, a hard failure with remediation steps is strictly better than a confident, plausible, wrong answer.
-
----
-
-## Development
-
-```bash
-npm test          # Vitest — 256 tests
-npm run typecheck # tsc --noEmit
-npm run lint      # ESLint
-npm run format    # Prettier
+```
+── TRACE ──────────────────────────────────────────────────────────
+invoke_workflow paper-to-podcast            255ms  89,292 in → 5,880 out  85,248 cached  $0.126
+├─ chat claude-sonnet-5  episode            41ms   14,882 in → 980 out    14,208 cached  $0.021
+└─ invoke_agent refine                      212ms  74,410 in → 4,900 out  71,040 cached  $0.105
+   ├─ round 0                               83ms   29,764 in → 1,960 out  28,416 cached  $0.042
+   │  └─ judge                              83ms   29,764 in → 1,960 out  28,416 cached  $0.042
+   │     ├─ chat claude-sonnet-5  claims    41ms   14,882 in → 980 out    14,208 cached  $0.021
+   │     └─ chat claude-sonnet-5  verdicts  41ms   14,882 in → 980 out    14,208 cached  $0.021
+   └─ round 1                               130ms  44,646 in → 2,940 out  42,624 cached  $0.063
+      ├─ chat claude-sonnet-5  revisions    45ms   14,882 in → 980 out    14,208 cached  $0.021
+      └─ judge                              83ms   29,764 in → 1,960 out  28,416 cached  $0.042
 ```
 
-Tests are deliberately network-free: PDF parsing runs against a flattened-paper fixture, providers are exercised through a stub, and the open-model JSON coercion is tested directly against malformed model output.
+That shape is the point. The repair loop is two rounds of judge and rewrite, and without this the only evidence of it was a progress message. Token and cost columns are summed over each subtree, so a round reports what everything under it consumed. The `cached` column is the one that pays for the exercise: the paper travels as roughly 120k characters of reusable context on every judge call, and this is the first time it is visible being served from cache rather than re-billed.
+
+### It exports anywhere
+
+Spans follow the [GenAI semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/), so the same run opens in any OTLP backend. Set the standard endpoint variable and both outputs happen at once:
+
+```bash
+docker run --rm -p 16686:16686 -p 4318:4318 jaegertracing/all-in-one
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 npm run generate -- paper.pdf --revise --trace
+```
+
+Tracing is inert unless asked for. With no flag and no endpoint configured, the provider decorators return the provider unchanged and nothing is allocated.
+
+### Retries are visible attempt by attempt
+
+Both the Claude and open-model paths retry internally when a model returns input that fails schema validation. Each attempt gets its own child span with the reason it was rejected:
+
+```
+chat qwen2:7b-32k  claims  42.5s  2,632 in → 772 out
+├─ attempt 1               8.8s  ✗ rejected: claims: Required
+└─ attempt 2               33.8s
+```
+
+With payload capture on, each rejected attempt also carries what the model actually sent, which is usually the only thing that explains the failure. The case that motivated it: qwen2:7b replying to claim extraction with **the JSON Schema itself** rather than data matching it. It parses as valid JSON and has no `claims` key, so the error reads `claims: Required` and says nothing about the cause.
+
+That failure also had a fix. The old correction, "reply again with a JSON object conforming to the schema", reads as agreement to a model that believes it already did, so all four attempts returned byte-identical output. The retry now names the mistake when it detects a schema echo, and the same call that used to fail outright recovers on the second attempt.
+
+### Prompts and responses are opt-in
+
+Spans always carry model, tokens, cost, latency, retries, and the _size_ of each prompt, never its content. To see the actual text:
+
+```bash
+npm run generate -- paper.pdf --revise --trace --trace-payloads
+```
+
+That adds `gen_ai.system_instructions`, `gen_ai.input.messages`, and `gen_ai.output.messages`, truncated, in the shape the conventions define. `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true` does the same and is the standard name, so it works for the server and web app too, which have no flags to pass.
+
+It is off by default because the paper rides along on every judge call, and because a trace should not quietly become a copy of a document somebody gave you in confidence.
 
 ---
 
-## What is next
+## Key decisions
 
-- **P6 — Ship.** CI covering the web build, and a deployed URL. The app needs a long-lived Node process rather than serverless: a job runs about eighty seconds and the store is process memory. Moving the store to Redis is what would change that, and `lib/jobs` is storage-agnostic so it can.
-- **More papers.** The provider comparison currently runs on one. It demonstrates the harness works, not which model is better.
-- **An independent judge.** Claude grades its own output on the frontier row, flagged in every report. A second provider breaks the tie; `JUDGE_PROVIDER` exists for it.
-- **Judge sensitivity.** Mutation testing covers the deterministic layers. Running the same corruptions through the LLM judge would give a detection rate for the expensive layer too.
+### The grader feeds back into the writer
+
+A verdict that only lands in a report cannot fix anything. Every claim the judge marks `contradicted`, or `unsupported` and specific, goes back to the model together with the passage that contradicts it, and only the turns carrying those claims are rewritten.
+
+Three properties make this a control loop rather than a gesture:
+
+- **The repair is narrow.** Only the text of flagged turns changes. Speakers, ordering, and turn count are untouched, because strict alternation is an error-level check and a rewrite that dropped a turn would trade a faithfulness failure for a structural one.
+- **Every round is re-judged in full**, not just the turns that changed, because a rewrite can introduce a new error that a partial re-check would miss.
+- **The better script wins, not the later one.** If no revision beats the original, the original is what you get and the report says so. Without that, self-correction would be exactly the unfalsifiable claim this project exists to avoid.
+
+Vague unsupported statements are deliberately left alone. They are conversational framing, they already do not count toward the hallucination rate, and rewriting them churns the script for no measurable gain.
+
+### The pipeline fails loudly on context overflow
+
+Self-hosted endpoints cap the context window well below the model's real limit and do not error when a prompt exceeds it. They quietly drop the overflow. Ollama, for instance, defaults to 4,096 tokens no matter what the model supports, and ignores `num_ctx` over its OpenAI-compatible route.
+
+This was found the hard way. Running the Amazon Aurora paper (roughly 17k tokens) through a local 7B model produced a fluent, well-structured episode about a topic found nowhere in the paper. The model had seen about a quarter of the input and confabulated the rest, with no error anywhere in the stack.
+
+The pipeline now compares the tokens sent against the tokens the server reports processing and aborts on a large shortfall. For a faithfulness-first system, a hard failure with remediation steps is strictly better than a confident, plausible, wrong answer.
+
+### Structured output instead of parsing text
+
+The original prototype asked for one blob of prose and split it with a regex, which needed a second model call whenever the markers did not appear. A schema removes the failure mode entirely.
+
+Forcing `tool_choice` guarantees Claude _calls_ the tool, not that its input matches the schema. Unlike OpenAI's strict mode, tool input is validated loosely and a field occasionally comes back mistyped, so validation and retry belong on the Claude path too, not only the open-model one.
+
+### Section-aware extraction, not map-reduce chunking
+
+Modern context windows swallow most papers whole, so chunking a typical paper would be engineering theatre. The real quality win is _what_ you send, not how you split it. Dropping the reference list and appendix measurably reduces fabricated citations. Papers that genuinely exceed the budget are truncated and flagged rather than silently cut.
+
+### Fabrication is not only about facts
+
+Left unconstrained, models name the show, hand the speakers doctorates, and slip into "our approach" as though the presenters wrote the paper. All three are forbidden in the prompt and checked deterministically afterwards.
+
+### It runs free
+
+Local Ollama for the script, Piper for the voices, whisper.cpp for verification: a complete episode with no account anywhere. Hosted providers are a config change.
+
+Worth knowing where that ends. A 7B model can write a serviceable episode but generally cannot hold the judge's schema, so the fact-checking layer wants a stronger model. When the check cannot run, the episode is still delivered and reported plainly as unchecked rather than silently passing.

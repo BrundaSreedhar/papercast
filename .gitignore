@@ -44,3 +44,7 @@ sample_papers/
 .next/
 next-env.d.ts
 AGENTS.md
+
+# study ledger (personal)
+learning.json
+learning.json.tmp

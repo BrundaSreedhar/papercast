@@ -46,6 +46,11 @@ export interface Claim {
 export type Verdict = "supported" | "unsupported" | "contradicted";
 
 export interface ClaimVerdict {
+  /**
+   * Dialogue turn the claim came from. Carried through from extraction so a
+   * failed verdict points at the text that has to change, not just at a score.
+   */
+  turn: number;
   claim: string;
   verdict: Verdict;
   /** Quote from the paper backing a `supported` verdict, or the conflict. */

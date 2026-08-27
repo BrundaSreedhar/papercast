@@ -13,6 +13,7 @@
  */
 import type { Episode } from "../llm/schema";
 import type { LLMProvider, Usage } from "../llm/types";
+import { addUsage } from "../llm/usage";
 import { paperToText, type PaperStructure } from "../pdf/extract";
 import {
   ClaimExtractionSchema,
@@ -30,15 +31,6 @@ export interface JudgeOptions {
   provider: LLMProvider;
   /** Judge deterministically; grading should not vary run to run. */
   temperature?: number;
-}
-
-function addUsage(a: Usage, b: Usage): Usage {
-  return {
-    inputTokens: (a.inputTokens ?? 0) + (b.inputTokens ?? 0),
-    outputTokens: (a.outputTokens ?? 0) + (b.outputTokens ?? 0),
-    cacheWriteTokens: (a.cacheWriteTokens ?? 0) + (b.cacheWriteTokens ?? 0),
-    cacheReadTokens: (a.cacheReadTokens ?? 0) + (b.cacheReadTokens ?? 0),
-  };
 }
 
 /** Render the dialogue with turn indices so claims can cite their source. */
@@ -113,6 +105,7 @@ export async function verifyClaims(
   const verdicts: ClaimVerdict[] = result.data.verdicts
     .filter((v) => v.claimIndex >= 0 && v.claimIndex < factual.length)
     .map((v) => ({
+      turn: factual[v.claimIndex]!.turn,
       claim: factual[v.claimIndex]!.text,
       verdict: v.verdict,
       evidence: v.evidence || undefined,

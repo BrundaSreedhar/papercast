@@ -3,19 +3,30 @@
 import { useCallback, useRef, useState } from "react";
 import { TranscriptPlayer, type Timing, type Turn } from "./components/TranscriptPlayer";
 
-const STAGES = ["parsing", "scripting", "synthesizing", "verifying"] as const;
+const STAGES = ["parsing", "scripting", "reviewing", "synthesizing", "verifying"] as const;
 const STAGE_LABELS: Record<string, string> = {
   parsing: "Reading the paper",
   scripting: "Writing the episode",
+  reviewing: "Fact-checking it against the paper",
   synthesizing: "Recording it",
   verifying: "Checking the audio against the script",
 };
 
 interface Progress { stage: string; percent: number; message: string }
+interface Review {
+  faithfulnessBefore: number;
+  faithfulnessAfter: number;
+  failuresBefore: number;
+  failuresAfter: number;
+  revisedTurns: number[];
+  improved: boolean;
+}
 interface Summary {
   paperTitle?: string;
   totalMs?: number;
   transcriptRecall?: number;
+  review?: Review;
+  reviewError?: { message: string };
   cost?: { llmInputTokens: number; llmOutputTokens: number; ttsCalls: number; usd?: number };
 }
 
@@ -23,6 +34,8 @@ export default function Home() {
   const [file, setFile] = useState<File | null>(null);
   const [minutes, setMinutes] = useState(4);
   const [verify, setVerify] = useState(false);
+  const [revise, setRevise] = useState(false);
+  const [provider, setProvider] = useState("open");
   const [over, setOver] = useState(false);
 
   const [progress, setProgress] = useState<Progress | null>(null);
@@ -46,6 +59,8 @@ export default function Home() {
     body.set("pdf", file);
     body.set("minutes", String(minutes));
     body.set("verify", String(verify));
+    body.set("revise", String(revise));
+    body.set("provider", provider);
 
     const res = await fetch("/api/jobs", { method: "POST", body });
     if (!res.ok) {
@@ -73,9 +88,16 @@ export default function Home() {
       setTimings(t.timings ?? []);
     });
     source.onerror = () => source.close();
-  }, [file, minutes, verify]);
+  }, [file, minutes, verify, revise, provider]);
 
-  const stageIndex = progress ? STAGES.indexOf(progress.stage as (typeof STAGES)[number]) : -1;
+  // Only show the stages this run will actually pass through, so the stepper
+  // matches the progress bar instead of stranding a step that never runs.
+  const shownStages = STAGES.filter(
+    (s) => (s !== "reviewing" || revise) && (s !== "verifying" || verify),
+  );
+  const stageIndex = progress
+    ? shownStages.indexOf(progress.stage as (typeof STAGES)[number])
+    : -1;
 
   return (
     <main className="wrap">
@@ -126,6 +148,22 @@ export default function Home() {
               min
             </label>
             <label>
+              Model
+              <select value={provider} onChange={(e) => setProvider(e.target.value)}>
+                <option value="open">local (free)</option>
+                <option value="anthropic">Claude</option>
+                <option value="openai">OpenAI</option>
+              </select>
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={revise}
+                onChange={(e) => setRevise(e.target.checked)}
+              />
+              fact-check and repair the script
+            </label>
+            <label>
               <input
                 type="checkbox"
                 checked={verify}
@@ -143,7 +181,7 @@ export default function Home() {
       {progress && !summary && (
         <section className="card" style={{ marginTop: "1.5rem" }}>
           <div className="stages">
-            {STAGES.map((s, i) => (
+            {shownStages.map((s, i) => (
               <div
                 key={s}
                 className={`stage${i === stageIndex ? " active" : ""}${i < stageIndex ? " complete" : ""}`}
@@ -185,6 +223,19 @@ export default function Home() {
             {summary.transcriptRecall !== undefined && (
               <span>
                 <b>{Math.round(summary.transcriptRecall * 100)}%</b> of the script verified in the audio
+              </span>
+            )}
+            {summary.reviewError && (
+              <span title={summary.reviewError.message}>
+                <b>unchecked</b> — the fact-check did not run
+              </span>
+            )}
+            {summary.review && (
+              <span>
+                <b>{Math.round(summary.review.faithfulnessAfter * 100)}%</b> of claims trace to
+                the paper
+                {summary.review.improved &&
+                  ` · repaired ${summary.review.revisedTurns.length} turns`}
               </span>
             )}
             {summary.cost?.usd !== undefined && <span><b>${summary.cost.usd.toFixed(3)}</b></span>}

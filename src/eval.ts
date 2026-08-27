@@ -17,6 +17,7 @@ import type { EvalResult } from "../lib/eval/types";
 import { generateEpisode } from "../lib/llm/generateEpisode";
 import { getProvider } from "../lib/llm/index";
 import { activeProvider, type ProviderName } from "../lib/config/env";
+import { runEntry } from "./entry";
 
 const RESULTS_DIR = join(process.cwd(), "lib", "eval", "results");
 
@@ -142,7 +143,4 @@ async function main() {
   console.log(`💾  Written to lib/eval/results/${stamp}.{json,md}\n`);
 }
 
-main().catch((err) => {
-  console.error("\n❌  Failed:", err instanceof Error ? err.message : err);
-  process.exit(1);
-});
+runEntry(main);

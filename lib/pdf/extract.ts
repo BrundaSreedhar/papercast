@@ -8,6 +8,10 @@
  * without a real PDF.
  */
 
+import { parseReferences, type Reference } from "./references";
+import { figuresToText } from "../vision/describe";
+import type { FigureDescription } from "../vision/types";
+
 export interface PaperSection {
   heading: string;
   content: string;
@@ -19,6 +23,22 @@ export interface PaperStructure {
   sections: PaperSection[];
   /** Word count of retained content (title + abstract + sections). */
   wordCount: number;
+  /**
+   * Descriptions of figures and tables, when a vision model has read them.
+   *
+   * Held separately from `sections` because they are model-generated rather
+   * than extracted, and everything downstream needs to be able to tell the
+   * difference.
+   */
+  figures?: FigureDescription[];
+  /**
+   * The paper's bibliography.
+   *
+   * Kept out of the text the model sees — a visible reference list invites
+   * fabricated citations — but retained here, because it is the authors' own
+   * grounded statement of what this work builds on.
+   */
+  references?: Reference[];
 }
 
 /** Bounds on how far a wrapped title may run before we stop joining lines. */
@@ -238,12 +258,20 @@ export function parsePaperStructure(raw: string): PaperStructure {
     if (cleaned) kept.push({ heading: "Body", content: cleaned });
   }
 
+  const references = parseReferences(text);
+
   const wordCount =
     countWords(title) +
     countWords(abstract) +
     kept.reduce((n, s) => n + countWords(s.content), 0);
 
-  return { title, abstract, sections: kept, wordCount };
+  return {
+    title,
+    abstract,
+    sections: kept,
+    wordCount,
+    ...(references.length ? { references } : {}),
+  };
 }
 
 /** Render a structured paper back to plain text for a prompt. */
@@ -252,6 +280,11 @@ export function paperToText(paper: PaperStructure): string {
   if (paper.title) parts.push(`# ${paper.title}`);
   if (paper.abstract) parts.push(`## Abstract\n${paper.abstract}`);
   for (const s of paper.sections) parts.push(`## ${s.heading}\n${s.content}`);
+  // Figure descriptions are appended, labelled as derived, so they are
+  // available to the writer and to the judge without being mistaken for the
+  // paper's own words.
+  const figures = figuresToText(paper.figures ?? []);
+  if (figures) parts.push(figures);
   return parts.join("\n\n");
 }
 

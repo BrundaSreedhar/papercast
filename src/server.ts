@@ -20,8 +20,19 @@ import { JobStore } from "../lib/jobs/store";
 import { runJob } from "../lib/jobs/pipeline";
 import type { ProviderName } from "../lib/config/env";
 import type { TTSProviderName } from "../lib/tts/index";
+import { initTracing, shutdownTracing } from "../lib/trace/index";
 
 const AUDIO_DIR = join(process.cwd(), "public", "audio");
+// A server has no argv to flag, so the standard OTel endpoint variable is the
+// switch. No waterfall: a long-lived process would collect spans forever and
+// never reach the point where they get rendered.
+if (
+  process.env.OTEL_EXPORTER_OTLP_ENDPOINT?.trim() ||
+  process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT?.trim()
+) {
+  initTracing({ serviceName: "paper-to-podcast-server", waterfall: false });
+}
+
 const PORT = Number(process.env.PORT ?? 8000);
 const MAX_PDF_BYTES = 25 * 1024 * 1024;
 
@@ -156,9 +167,18 @@ app.get("/api/jobs/:id/transcript", (req, res) => {
   });
 });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`\n🎙️   PaperCast API on http://localhost:${PORT}`);
   console.log(`    POST /api/jobs                 start a job (multipart: pdf, minutes)`);
   console.log(`    GET  /api/jobs/:id/stream      progress as server-sent events`);
   console.log(`    GET  /api/jobs/:id/audio       finished audio\n`);
 });
+
+// Drain buffered spans on the way out; between signals the batch processor
+// flushes on its own schedule, so normal operation costs nothing per request.
+for (const sig of ["SIGINT", "SIGTERM"] as const) {
+  process.once(sig, () => {
+    server.close();
+    void shutdownTracing().then(() => process.exit(0));
+  });
+}
