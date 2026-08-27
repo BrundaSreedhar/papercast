@@ -6,7 +6,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { JobStore } from "./store";
-import { overallPercent, isTerminal, STAGE_WEIGHTS, STAGES } from "./types";
+import { activeStages, overallPercent, isTerminal, STAGE_WEIGHTS, STAGES } from "./types";
 import { toJobError } from "./errors";
 import { ContextTruncationError } from "../llm/contextGuard";
 import { OutputTruncationError } from "../llm/errors";
@@ -15,9 +15,14 @@ const opts = { minutes: 4, verify: false };
 
 describe("overallPercent", () => {
   it("weights stages by how long they actually take", () => {
-    // Scripting dominates, so finishing it should pass the halfway mark.
-    expect(overallPercent("scripting", 1)).toBeGreaterThan(45);
+    // Scripting is the single most expensive stage, and parsing is near-free.
+    expect(STAGE_WEIGHTS.scripting).toBeGreaterThan(STAGE_WEIGHTS.synthesizing);
     expect(overallPercent("parsing", 1)).toBeLessThan(10);
+  });
+
+  it("passes halfway once the script is written, on a transcript-only run", () => {
+    const stages = activeStages({ revise: false, audio: false, verify: false });
+    expect(overallPercent("scripting", 1, stages)).toBeGreaterThan(45);
   });
 
   it("never goes backwards across the stage order", () => {
@@ -50,6 +55,71 @@ describe("overallPercent", () => {
   it("has weights that sum to a full timeline", () => {
     const total = Object.values(STAGE_WEIGHTS).reduce((a, b) => a + b, 0);
     expect(total).toBe(100);
+  });
+
+  /**
+   * A run that skips review or verification used to leave the bar short and
+   * then jump to 100 at the end. Percentages are normalized over the stages the
+   * run will actually pass through, so the last stage really does finish at 100.
+   */
+  it("finishes at 100 on the last stage a run actually reaches", () => {
+    expect(
+      overallPercent("scripting", 1, activeStages({ revise: false, audio: false, verify: false })),
+    ).toBe(100);
+    expect(
+      overallPercent("synthesizing", 1, activeStages({ revise: false, audio: true, verify: false })),
+    ).toBe(100);
+    expect(
+      overallPercent("reviewing", 1, activeStages({ revise: true, audio: false, verify: false })),
+    ).toBe(100);
+    expect(
+      overallPercent("verifying", 1, activeStages({ revise: true, audio: true, verify: true })),
+    ).toBe(100);
+  });
+
+  it("never goes backwards within a run that reviews and verifies", () => {
+    const stages = activeStages({ revise: true, audio: true, verify: true });
+    let prev = -1;
+    for (const s of stages) {
+      const p = overallPercent(s, 0, stages);
+      expect(p).toBeGreaterThanOrEqual(prev);
+      prev = p;
+    }
+  });
+
+  it("leaves room for the stages still to come when review is on", () => {
+    const stages = activeStages({ revise: true, audio: true, verify: true });
+    expect(overallPercent("scripting", 1, stages)).toBeLessThan(
+      overallPercent("reviewing", 1, stages),
+    );
+  });
+
+  it("falls back to the full timeline for a stage the run said it would skip", () => {
+    // Defensive: reporting an inactive stage should still produce a sane number
+    // rather than dividing by a total that does not include it.
+    const stages = activeStages({ revise: false, audio: false, verify: false });
+    const p = overallPercent("verifying", 1, stages);
+    expect(p).toBeGreaterThan(0);
+    expect(p).toBeLessThanOrEqual(100);
+  });
+});
+
+describe("activeStages", () => {
+  it("drops review when the run was not asked to fact-check", () => {
+    expect(activeStages({ revise: false, audio: true, verify: true })).not.toContain("reviewing");
+    expect(activeStages({ revise: true, audio: true, verify: true })).toContain("reviewing");
+  });
+
+  it("drops synthesis and verification for a transcript-only run", () => {
+    const stages = activeStages({ revise: false, audio: false, verify: true });
+    expect(stages).not.toContain("synthesizing");
+    // Verification checks audio, so it cannot happen without audio.
+    expect(stages).not.toContain("verifying");
+  });
+
+  it("keeps the canonical stage order", () => {
+    const stages = activeStages({ revise: true, audio: true, verify: true });
+    expect([...stages]).toEqual([...STAGES]);
   });
 });
 

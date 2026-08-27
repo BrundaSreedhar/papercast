@@ -14,19 +14,30 @@ import { generateEpisode } from "../lib/llm/generateEpisode";
 import { getProvider } from "../lib/llm/index";
 import { activeProvider, type ProviderName } from "../lib/config/env";
 import { enrichWithFigures, getVisionProvider } from "../lib/vision/index";
+import { refineEpisode } from "../lib/refine/index";
+import { runEntry } from "./entry";
+import { withSpan } from "../lib/trace/index";
+import * as TA from "../lib/trace/attributes";
 
 interface Args {
   pdfPath: string;
   minutes: number;
   provider?: ProviderName;
   out: string;
+  /** Fact-check the script against the paper and rewrite what fails. */
+  revise: boolean;
+  reviseRounds: number;
 }
 
 function parseArgs(argv: string[]): Args {
   const rest = argv.slice(2);
   const pdfPath = rest.find((a) => !a.startsWith("--"));
   if (!pdfPath) {
-    console.error("Usage: npm run generate -- <paper.pdf> [--minutes N] [--provider anthropic|openai|open] [--out file.json] [--figures]");
+    console.error(
+      "Usage: npm run generate -- <paper.pdf> [--minutes N] [--provider anthropic|openai|open]\n" +
+        "                          [--out file.json] [--figures] [--revise] [--revise-rounds N]\n" +
+        "                          [--trace] [--trace-payloads]",
+    );
     process.exit(1);
   }
   const get = (flag: string) => {
@@ -34,20 +45,34 @@ function parseArgs(argv: string[]): Args {
     return i !== -1 ? rest[i + 1] : undefined;
   };
   const providerArg = get("--provider");
-  console.log(providerArg);
-  console.log(get("--minutes"));
-  console.log(get("--out"));
   return {
     pdfPath,
     minutes: Number(get("--minutes") ?? 10),
     provider: providerArg as ProviderName | undefined,
     out: get("--out") ?? `${basename(pdfPath).replace(/\.pdf$/i, "")}.episode.json`,
+    revise: rest.includes("--revise"),
+    reviseRounds: Number(get("--revise-rounds") ?? 1),
   };
 }
 
 async function main() {
-  const rest = process.argv.slice(2);
   const args = parseArgs(process.argv);
+  // One workflow span so a traced run is a single tree rather than a scripting
+  // root and a refine root sitting side by side.
+  return withSpan(
+    "invoke_workflow generate",
+    {
+      [TA.GEN_AI_OPERATION_NAME]: "invoke_workflow",
+      [TA.GEN_AI_WORKFLOW_NAME]: "generate",
+      [TA.PAPERCAST_MINUTES]: args.minutes,
+      [TA.PAPERCAST_REVISE]: args.revise,
+    },
+    () => generate(args),
+  );
+}
+
+async function generate(args: Args) {
+  const rest = process.argv.slice(2);
   const provider = args.provider ?? activeProvider();
 
   console.log(`\n📄  Reading ${args.pdfPath}`);
@@ -79,13 +104,58 @@ async function main() {
   });
   const secs = ((Date.now() - t0) / 1000).toFixed(1);
 
-  const { episode, usage, retries, truncatedInput, model } = result;
+  const { usage, retries, truncatedInput, model } = result;
+  let episode = result.episode;
   console.log(`\n✅  Done in ${secs}s  (model: ${model})`);
   console.log(
     `    tokens: ${usage.inputTokens ?? "?"} in / ${usage.outputTokens ?? "?"} out` +
       `${retries ? ` · retries: ${retries}` : ""}` +
       `${truncatedInput ? " · input truncated" : ""}`,
   );
+
+  // Fact-checking costs two judge passes plus a rewrite, so it is opt-in.
+  let review: Awaited<ReturnType<typeof refineEpisode>> | undefined;
+  if (args.revise) {
+    console.log(`\n🔍  Fact-checking the script against the paper…`);
+    try {
+      review = await refineEpisode(episode, paper, {
+        provider: getProvider(provider),
+        maxRounds: args.reviseRounds,
+        onProgress: (round, of, message) => console.log(`    [${round}/${of}] ${message}`),
+      });
+    } catch (err) {
+      // The script is already written and paid for. Report the failed check and
+      // keep going rather than discarding the episode.
+      console.error(
+        `    ⚠️  the fact-check did not complete: ${err instanceof Error ? err.message : err}`,
+      );
+      console.error(`    the episode below is UNCHECKED.`);
+    }
+  }
+
+  if (review) {
+    episode = review.episode;
+
+    const before = review.rounds[0]!;
+    const kept = review.rounds.find((r) => r.round === review!.bestRound) ?? before;
+    const pct = (n: number) => `${(n * 100).toFixed(0)}%`;
+    console.log(
+      `\n    faithfulness: ${pct(before.faithfulness.faithfulness)} → ${pct(kept.faithfulness.faithfulness)}` +
+        ` · unsupported claims: ${before.failures} → ${kept.failures}`,
+    );
+    if (review.improved) {
+      console.log(`    rewrote turns: ${kept.revisedTurns.join(", ")}`);
+    } else if (before.failures === 0) {
+      console.log(`    nothing to fix — every claim traces to the paper.`);
+    } else {
+      console.log(`    kept the original: no rewrite scored better.`);
+    }
+    for (const v of before.faithfulness.verdicts.filter(
+      (x) => x.verdict === "contradicted" || (x.verdict === "unsupported" && x.specific),
+    )) {
+      console.log(`      ✗ [turn ${v.turn}] ${v.verdict}: ${v.claim}`);
+    }
+  }
 
   console.log(`\n── SUMMARY ─────────────────────────────────────────────`);
   console.log(episode.summary);
@@ -95,11 +165,8 @@ async function main() {
   episode.turns.slice(0, 4).forEach((t) => console.log(`  ${t.speaker.toUpperCase()}: ${t.text}`));
   console.log(`  … (${episode.turns.length} turns total)`);
 
-  await writeFile(args.out, JSON.stringify(result, null, 2), "utf8");
+  await writeFile(args.out, JSON.stringify({ ...result, episode, review }, null, 2), "utf8");
   console.log(`\n💾  Full episode written to ${args.out}\n`);
 }
 
-main().catch((err) => {
-  console.error("\n❌  Failed:", err instanceof Error ? err.message : err);
-  process.exit(1);
-});
+runEntry(main);

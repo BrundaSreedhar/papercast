@@ -16,6 +16,7 @@ import { checkExpectation, loadFixtures, loadPaper, loadPapers } from "../lib/ev
 import { judgeEpisode } from "../lib/eval/judge";
 import { getProvider } from "../lib/llm/index";
 import { activeProvider, type ProviderName } from "../lib/config/env";
+import { runEntry } from "./entry";
 
 function pct(n: number): string {
   return `${(n * 100).toFixed(0)}%`;
@@ -132,7 +133,4 @@ async function main() {
   console.log("✅  Judge validation passed. Every fixture landed inside its expected bounds.\n");
 }
 
-main().catch((err) => {
-  console.error("\n❌  Failed:", err instanceof Error ? err.message : err);
-  process.exit(1);
-});
+runEntry(main);

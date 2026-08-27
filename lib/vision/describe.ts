@@ -11,6 +11,8 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { FigureDescription, VisionProvider } from "./types";
+import { withSpan } from "../trace/tracer";
+import { PAPERCAST_TASK } from "../trace/attributes";
 
 export interface DescribeOptions {
   provider: VisionProvider;
@@ -49,6 +51,17 @@ export async function describeFigures(
     dpi: opts.dpi,
   });
 
+  return withSpan(
+    "describe figures",
+    { [PAPERCAST_TASK]: "describe_figures", "papercast.pages": rendered.length },
+    async () => describeEach(rendered, opts),
+  );
+}
+
+async function describeEach(
+  rendered: Awaited<ReturnType<typeof renderPages>>,
+  opts: DescribeOptions,
+): Promise<FigureDescription[]> {
   const out: FigureDescription[] = [];
   for (const [i, page] of rendered.entries()) {
     const description = await opts.provider.describePage(page.png, page.captions);

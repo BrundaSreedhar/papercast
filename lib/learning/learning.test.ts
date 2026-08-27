@@ -61,12 +61,13 @@ describe("recordEpisode", () => {
       ...base,
       verdicts: [
         {
+          turn: 2,
           claim: "The network is the bottleneck",
           verdict: "supported",
           evidence: "the central constraint has moved to the network",
           specific: false,
         },
-        { claim: "Aurora uses eight replicas", verdict: "contradicted", specific: true },
+        { turn: 4, claim: "Aurora uses eight replicas", verdict: "contradicted", specific: true },
       ],
     });
     const items = l.papers.aurora!.learned;
@@ -121,6 +122,7 @@ describe("recordEpisode", () => {
       ...base,
       verdicts: [
         {
+          turn: 2,
           claim: "The network is the bottleneck",
           verdict: "supported",
           evidence: "quoted",

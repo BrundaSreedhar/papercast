@@ -56,6 +56,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
             turns: j.result?.episode.turns.length,
             totalMs: j.result?.totalMs,
             transcriptRecall: j.result?.transcriptRecall,
+            review: j.result?.review,
+            reviewError: j.result?.reviewError,
             cost: j.cost,
           });
           finish();

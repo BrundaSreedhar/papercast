@@ -7,7 +7,8 @@ const v = (
   verdict: ClaimVerdict["verdict"],
   specific: boolean,
   claim = "c",
-): ClaimVerdict => ({ claim, verdict, specific });
+  turn = 0,
+): ClaimVerdict => ({ turn, claim, verdict, specific });
 
 describe("scoreFaithfulness", () => {
   it("scores an all-supported episode at 1 with no hallucination", () => {

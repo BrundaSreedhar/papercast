@@ -10,6 +10,7 @@ export const STAGES = [
   "queued",
   "parsing",
   "scripting",
+  "reviewing",
   "synthesizing",
   "verifying",
   "done",
@@ -18,19 +19,39 @@ export const STAGES = [
 export type JobStage = (typeof STAGES)[number] | "error";
 
 /**
- * Share of the overall timeline each stage occupies, from measured runs:
- * parsing is near-instant, scripting around 50 seconds, synthesis around 35,
- * and verification roughly as long as synthesis again. Weighting by real cost
- * keeps the reported percentage honest instead of jumping in equal steps.
+ * Relative cost of each stage, from measured runs: parsing is near-instant,
+ * scripting around 50 seconds, review roughly as long again (it grades the
+ * script, rewrites the bad turns, then grades it a second time), synthesis
+ * around 35, and verification roughly as long as synthesis. Weighting by real
+ * cost keeps the reported percentage honest instead of jumping in equal steps.
+ *
+ * These are weights, not percentages. A run that skips review or verification
+ * renormalizes over the stages it will actually pass through — see
+ * `activeStages` — so the bar still ends at 100 without a jump at the finish.
  */
 export const STAGE_WEIGHTS: Record<Exclude<JobStage, "error">, number> = {
   queued: 0,
-  parsing: 4,
-  scripting: 46,
-  synthesizing: 35,
-  verifying: 15,
+  parsing: 3,
+  scripting: 34,
+  reviewing: 28,
+  synthesizing: 24,
+  verifying: 11,
   done: 0,
 };
+
+/** Which stages a run will actually pass through, given what it was asked for. */
+export function activeStages(opts: {
+  revise: boolean;
+  audio: boolean;
+  verify: boolean;
+}): readonly JobStage[] {
+  return STAGES.filter(
+    (s) =>
+      (s !== "reviewing" || opts.revise) &&
+      (s !== "synthesizing" || opts.audio) &&
+      (s !== "verifying" || (opts.audio && opts.verify)),
+  );
+}
 
 export interface JobEvent {
   at: number;
@@ -48,8 +69,33 @@ export interface JobCost {
   usd?: number;
 }
 
+/** Outcome of the fact-check-and-repair pass, when it ran. */
+export interface JobReview {
+  /** Faithfulness of the script as first written, 0–1. */
+  faithfulnessBefore: number;
+  /** Faithfulness of the script that was kept, 0–1. */
+  faithfulnessAfter: number;
+  /** Unsupported or contradicted claims before repair, and in the kept script. */
+  failuresBefore: number;
+  failuresAfter: number;
+  /** Turn indices rewritten in the kept script. */
+  revisedTurns: number[];
+  /** Revision rounds attempted. */
+  rounds: number;
+  /** False when no revision beat the original and it was kept as written. */
+  improved: boolean;
+}
+
 export interface JobResult {
   episode: Episode;
+  /** Present when the job was asked to fact-check and repair the script. */
+  review?: JobReview;
+  /**
+   * Why the fact-check did not complete, when it was asked for and failed. The
+   * episode is still delivered; this says plainly that it went unchecked rather
+   * than letting the absence of a review look like a clean bill of health.
+   */
+  reviewError?: JobError;
   audioPath?: string;
   timings?: TurnTiming[];
   totalMs?: number;
@@ -73,7 +119,7 @@ export interface Job {
   stage: JobStage;
   percent: number;
   paperTitle?: string;
-  options: { minutes: number; provider?: string; verify: boolean };
+  options: { minutes: number; provider?: string; verify: boolean; revise?: boolean };
   cost: JobCost;
   events: JobEvent[];
   result?: JobResult;
@@ -84,15 +130,30 @@ export function isTerminal(stage: JobStage): boolean {
   return stage === "done" || stage === "error";
 }
 
-/** Overall percentage given the stage and how far through it we are. */
-export function overallPercent(stage: JobStage, withinStage = 0): number {
+/**
+ * Overall percentage given the stage, how far through it we are, and which
+ * stages this particular run includes.
+ */
+export function overallPercent(
+  stage: JobStage,
+  withinStage = 0,
+  active: readonly JobStage[] = STAGES,
+): number {
   if (stage === "error") return 100;
   if (stage === "done") return 100;
+
+  const stages = active.includes(stage) ? active : STAGES;
   let before = 0;
-  for (const s of STAGES) {
-    if (s === stage) break;
-    before += STAGE_WEIGHTS[s];
+  let total = 0;
+  let reached = false;
+  for (const s of stages) {
+    if (s === "error") continue;
+    if (s === stage) reached = true;
+    else if (!reached) before += STAGE_WEIGHTS[s];
+    total += STAGE_WEIGHTS[s];
   }
+  if (total === 0) return 0;
+
   const clamped = Math.min(1, Math.max(0, withinStage));
-  return Math.round(before + STAGE_WEIGHTS[stage] * clamped);
+  return Math.round(((before + STAGE_WEIGHTS[stage] * clamped) / total) * 100);
 }

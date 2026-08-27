@@ -1,10 +1,15 @@
 import { AnthropicVisionProvider } from "./anthropic";
 import { OpenAICompatibleVisionProvider } from "./openaiCompatible";
 import type { VisionProvider } from "./types";
+import { tracedVision } from "../trace/vision";
 
 export type VisionProviderName = "anthropic" | "openai" | "open";
 
 export function getVisionProvider(name?: VisionProviderName): VisionProvider {
+  return tracedVision(buildVision(name));
+}
+
+function buildVision(name?: VisionProviderName): VisionProvider {
   const chosen = name ?? (process.env.VISION_PROVIDER as VisionProviderName) ?? "anthropic";
   switch (chosen) {
     case "anthropic":

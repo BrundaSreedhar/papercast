@@ -35,8 +35,9 @@ export async function POST(req: Request) {
 
   const minutes = Number(form.get("minutes") ?? 4);
   const verify = form.get("verify") === "true";
+  const revise = form.get("revise") === "true";
   const provider = (form.get("provider") as ProviderName | null) ?? undefined;
-  const job = store.create({ minutes, provider, verify });
+  const job = store.create({ minutes, provider, verify, revise });
 
   const pdf = Buffer.from(await file.arrayBuffer());
   await mkdir(AUDIO_DIR, { recursive: true });
@@ -49,6 +50,7 @@ export async function POST(req: Request) {
     provider,
     ttsProvider: (form.get("tts") as TTSProviderName | null) ?? undefined,
     verify,
+    revise,
     audioPath: join(AUDIO_DIR, `${job.id}.wav`),
   });
 

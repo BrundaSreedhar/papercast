@@ -21,6 +21,7 @@ import {
   summarize,
   ledgerPath,
 } from "../lib/learning/index";
+import { runEntry } from "./entry";
 
 function arg(flag: string): string | undefined {
   const i = process.argv.indexOf(flag);
@@ -110,8 +111,4 @@ async function show() {
   }
 }
 
-const cmd = process.argv[2];
-(cmd === "record" ? record() : show()).catch((err) => {
-  console.error("\n❌  Failed:", err instanceof Error ? err.message : err);
-  process.exit(1);
-});
+runEntry(() => (process.argv[2] === "record" ? record() : show()));

@@ -18,6 +18,7 @@ import { resolveTTSProvider, synthesizeEpisode, type TTSProviderName } from "../
 import { runAudioChecks } from "../lib/eval/audioChecks";
 import { WhisperCppProvider, whisperAvailable } from "../lib/eval/asr";
 import { fidelityCheck, verifyPerTurn } from "../lib/eval/transcriptFidelity";
+import { runEntry } from "./entry";
 
 const run = promisify(execFile);
 
@@ -161,7 +162,4 @@ async function main() {
   if (result.timings.length > 3) console.log(`    … ${result.timings.length} turns total\n`);
 }
 
-main().catch((err) => {
-  console.error("\n❌  Failed:", err instanceof Error ? err.message : err);
-  process.exit(1);
-});
+runEntry(main);
