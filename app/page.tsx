@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { TranscriptPlayer, type Timing, type Turn } from "./components/TranscriptPlayer";
 
 const STAGES = ["parsing", "scripting", "reviewing", "synthesizing", "verifying"] as const;
@@ -29,9 +29,17 @@ interface Summary {
   reviewError?: { message: string };
   cost?: { llmInputTokens: number; llmOutputTokens: number; ttsCalls: number; usd?: number };
 }
+interface DemoPaper { id: string; title: string; authors: string; year: number; note: string }
+/**
+ * What this deployment allows. Uploads locally, a fixed shelf publicly — the
+ * page asks rather than assuming, because it is the same build either way.
+ */
+type Config = { demo: false } | { demo: true; papers: DemoPaper[]; maxMinutes: number };
 
 export default function Home() {
+  const [config, setConfig] = useState<Config | null>(null);
   const [file, setFile] = useState<File | null>(null);
+  const [paperId, setPaperId] = useState<string | null>(null);
   const [minutes, setMinutes] = useState(4);
   const [verify, setVerify] = useState(false);
   const [revise, setRevise] = useState(false);
@@ -46,26 +54,46 @@ export default function Home() {
   const [timings, setTimings] = useState<Timing[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const demo = config?.demo === true ? config : null;
   const running = progress !== null && !summary && !error;
+  const ready = demo ? paperId !== null : file !== null;
+
+  useEffect(() => {
+    // A failed config request means the local build, which is the mode with
+    // fewer restrictions — so it degrades toward the drop zone rather than
+    // toward a page with nothing on it.
+    fetch("/api/config")
+      .then((r) => r.json())
+      .then(setConfig)
+      .catch(() => setConfig({ demo: false }));
+  }, []);
+
+  useEffect(() => {
+    if (demo) setMinutes((m) => Math.min(m, demo.maxMinutes));
+  }, [demo]);
 
   const start = useCallback(async () => {
-    if (!file) return;
+    if (!ready) return;
     setError(null);
     setSummary(null);
     setTurns([]);
     setProgress({ stage: "queued", percent: 0, message: "Starting" });
 
     const body = new FormData();
-    body.set("pdf", file);
+    if (demo) body.set("paper", paperId ?? "");
+    else if (file) body.set("pdf", file);
     body.set("minutes", String(minutes));
     body.set("verify", String(verify));
     body.set("revise", String(revise));
-    body.set("provider", provider);
+    if (!demo) body.set("provider", provider);
 
     const res = await fetch("/api/jobs", { method: "POST", body });
     if (!res.ok) {
       setProgress(null);
-      setError({ message: (await res.json()).error ?? "Could not start the job." });
+      // A refusal carries a remedy — which limit was hit, and when to come
+      // back — and dropping it would leave the page looking broken.
+      const failed = await res.json().catch(() => ({}));
+      setError({ message: failed.error ?? "Could not start the job.", remedy: failed.remedy });
       return;
     }
     const { id } = await res.json();
@@ -88,7 +116,7 @@ export default function Home() {
       setTimings(t.timings ?? []);
     });
     source.onerror = () => source.close();
-  }, [file, minutes, verify, revise, provider]);
+  }, [demo, ready, file, paperId, minutes, verify, revise, provider]);
 
   // Only show the stages this run will actually pass through, so the stepper
   // matches the progress bar instead of stranding a step that never runs.
@@ -108,31 +136,60 @@ export default function Home() {
 
       {!running && !summary && (
         <section>
-          <div
-            className={`drop${over ? " over" : ""}`}
-            onClick={() => inputRef.current?.click()}
-            onDragOver={(e) => {
-              e.preventDefault();
-              setOver(true);
-            }}
-            onDragLeave={() => setOver(false)}
-            onDrop={(e) => {
-              e.preventDefault();
-              setOver(false);
-              const f = e.dataTransfer.files[0];
-              if (f?.type === "application/pdf") setFile(f);
-            }}
-          >
-            <strong>{file ? file.name : "Drop a paper here"}</strong>
-            <span>{file ? `${(file.size / 1048576).toFixed(1)} MB` : "or click to choose a PDF"}</span>
-          </div>
-          <input
-            ref={inputRef}
-            type="file"
-            accept="application/pdf"
-            hidden
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-          />
+          {demo ? (
+            <>
+              <div className="papers">
+                {demo.papers.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className={`paper${paperId === p.id ? " chosen" : ""}`}
+                    onClick={() => setPaperId(p.id)}
+                    aria-pressed={paperId === p.id}
+                  >
+                    <strong>{p.title}</strong>
+                    <span className="who-wrote">{p.authors}, {p.year}</span>
+                    <span>{p.note}</span>
+                  </button>
+                ))}
+              </div>
+              <p className="note">
+                This is a public demo, so it runs a fixed shelf of papers rather than
+                accepting uploads — a link anyone can open should not be able to spend an
+                API key on an arbitrary file. It makes {demo.maxMinutes} minutes at a time,
+                one episode at a time. Run it on your own PDF by cloning the repository,
+                where none of that applies.
+              </p>
+            </>
+          ) : (
+            <>
+              <div
+                className={`drop${over ? " over" : ""}`}
+                onClick={() => inputRef.current?.click()}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setOver(true);
+                }}
+                onDragLeave={() => setOver(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setOver(false);
+                  const f = e.dataTransfer.files[0];
+                  if (f?.type === "application/pdf") setFile(f);
+                }}
+              >
+                <strong>{file ? file.name : "Drop a paper here"}</strong>
+                <span>{file ? `${(file.size / 1048576).toFixed(1)} MB` : "or click to choose a PDF"}</span>
+              </div>
+              <input
+                ref={inputRef}
+                type="file"
+                accept="application/pdf"
+                hidden
+                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              />
+            </>
+          )}
 
           <div className="controls">
             <label>
@@ -140,21 +197,23 @@ export default function Home() {
               <input
                 type="number"
                 min={1}
-                max={20}
+                max={demo ? demo.maxMinutes : 20}
                 value={minutes}
                 onChange={(e) => setMinutes(Number(e.target.value))}
                 style={{ width: "4rem" }}
               />
               min
             </label>
-            <label>
-              Model
-              <select value={provider} onChange={(e) => setProvider(e.target.value)}>
-                <option value="open">local (free)</option>
-                <option value="anthropic">Claude</option>
-                <option value="openai">OpenAI</option>
-              </select>
-            </label>
+            {!demo && (
+              <label>
+                Model
+                <select value={provider} onChange={(e) => setProvider(e.target.value)}>
+                  <option value="open">local (free)</option>
+                  <option value="anthropic">Claude</option>
+                  <option value="openai">OpenAI</option>
+                </select>
+              </label>
+            )}
             <label>
               <input
                 type="checkbox"
@@ -163,15 +222,19 @@ export default function Home() {
               />
               fact-check and repair the script
             </label>
-            <label>
-              <input
-                type="checkbox"
-                checked={verify}
-                onChange={(e) => setVerify(e.target.checked)}
-              />
-              verify the audio afterwards
-            </label>
-            <button onClick={start} disabled={!file}>
+            {/* Verification transcribes the audio back with whisper.cpp, which
+                the deployed image does not carry. */}
+            {!demo && (
+              <label>
+                <input
+                  type="checkbox"
+                  checked={verify}
+                  onChange={(e) => setVerify(e.target.checked)}
+                />
+                verify the audio afterwards
+              </label>
+            )}
+            <button onClick={start} disabled={!ready}>
               Make the episode
             </button>
           </div>
@@ -239,7 +302,15 @@ export default function Home() {
               </span>
             )}
             {summary.cost?.usd !== undefined && <span><b>${summary.cost.usd.toFixed(3)}</b></span>}
-            <button className="ghost" onClick={() => { setSummary(null); setProgress(null); setFile(null); }}>
+            <button
+              className="ghost"
+              onClick={() => {
+                setSummary(null);
+                setProgress(null);
+                setFile(null);
+                setPaperId(null);
+              }}
+            >
               New episode
             </button>
           </div>

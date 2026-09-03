@@ -1,0 +1,28 @@
+{
+  "papers": [
+    {
+      "id": "attention",
+      "title": "Attention Is All You Need",
+      "authors": "Vaswani et al.",
+      "year": 2017,
+      "url": "https://arxiv.org/pdf/1706.03762",
+      "note": "The transformer. Dense with architecture a script has to get right."
+    },
+    {
+      "id": "resnet",
+      "title": "Deep Residual Learning for Image Recognition",
+      "authors": "He et al.",
+      "year": 2015,
+      "url": "https://arxiv.org/pdf/1512.03385",
+      "note": "Carries its argument in tables and plots, which text extraction never sees."
+    },
+    {
+      "id": "rag",
+      "title": "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks",
+      "authors": "Lewis et al.",
+      "year": 2020,
+      "url": "https://arxiv.org/pdf/2005.11401",
+      "note": "About grounding answers in sources, which is what this pipeline does to itself."
+    }
+  ]
+}

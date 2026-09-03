@@ -59,3 +59,29 @@ export const openConfig = () => ({
   apiKey: opt("OPEN_API_KEY", "ollama"),
   model: opt("OPEN_MODEL", "qwen2:7b"),
 });
+
+function num(name: string, fallback: number): number {
+  const v = Number(process.env[name]);
+  return Number.isFinite(v) && v > 0 ? v : fallback;
+}
+
+/**
+ * The public deployment, where the bill is paid by whoever built this and the
+ * visitors are strangers.
+ *
+ * Demo mode refuses uploads and offers a fixed set of papers fetched into the
+ * image instead. That bounds spend at a known number rather than at whatever
+ * the internet decides to upload, and it removes the one route that would
+ * otherwise accept an arbitrary file from anyone who finds the URL. The limits
+ * are configuration rather than constants because the ceiling that suits a
+ * portfolio link is not the one that suits a demo given to a room of people.
+ */
+export const demoConfig = () => ({
+  enabled: (process.env.DEMO_MODE ?? "").trim() === "1",
+  /** Longest episode a visitor may ask for. Length drives the whole bill. */
+  maxMinutes: num("DEMO_MAX_MINUTES", 4),
+  /** Episodes in flight at once. One machine synthesizing two is one too many. */
+  concurrentJobs: num("DEMO_CONCURRENT_JOBS", 1),
+  /** Episodes per rolling day, after which the demo says so and stops. */
+  dailyJobs: num("DEMO_DAILY_JOBS", 25),
+});

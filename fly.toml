@@ -1,0 +1,48 @@
+# Fly.io deployment.
+#
+#   fly launch --no-deploy --copy-config     # once, to claim the app name
+#   fly secrets set ANTHROPIC_API_KEY=sk-...
+#   fly deploy
+#
+# One machine, stopped when nobody is looking. The demo is a portfolio link
+# rather than a service: it should cost nothing at rest and be honest about
+# what it is when someone opens it.
+
+app = "papercast"
+primary_region = "sjc"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  # Uploads off, fixed shelf on. See lib/demo for what this actually changes.
+  DEMO_MODE = "1"
+  DEMO_MAX_MINUTES = "4"
+  DEMO_CONCURRENT_JOBS = "1"
+  DEMO_DAILY_JOBS = "25"
+  # The deployment holds credentials for exactly one provider; the local model
+  # option in the UI points at an Ollama server that exists on a laptop.
+  LLM_PROVIDER = "anthropic"
+  TTS_PROVIDER = "piper"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  # Scale to zero. A job holds an SSE connection open for its whole life, so a
+  # machine cannot be stopped out from under an episode being made.
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    path = "/api/health"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "20s"
+
+[[vm]]
+  # Synthesis holds a neural voice model in memory beside the Node server, and
+  # 512 MB is where that starts failing rather than slowing down.
+  memory = "1gb"
+  cpu_kind = "shared"
+  cpus = 1

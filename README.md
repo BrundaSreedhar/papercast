@@ -20,7 +20,7 @@ The interesting problem here is not generating audio. It is that a language mode
 | Injected audio corruptions detected                                      |  **5 / 5** |
 | Script wording verified present in the audio, by transcription           |    **96%** |
 | Judge variance across repeat runs, the noise floor for any claim above   | **±2 pts** |
-| Unit tests                                                               |    **345** |
+| Unit tests                                                               |    **354** |
 
 Every number is reproducible from this repo: `npm run eval`, `npm run eval:validate`, `npm test`.
 
@@ -226,6 +226,35 @@ npm run generate -- paper.pdf --revise --trace --trace-payloads
 That adds `gen_ai.system_instructions`, `gen_ai.input.messages`, and `gen_ai.output.messages`, truncated, in the shape the conventions define. `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true` does the same and is the standard name, so it works for the server and web app too, which have no flags to pass.
 
 It is off by default because the paper rides along on every judge call, and because a trace should not quietly become a copy of a document somebody gave you in confidence.
+
+---
+
+## Deployment
+
+The whole thing is one container, and that is a property of the work rather than a preference. A job outlives by minutes the request that starts it, and lives in the process that started it, so a platform handing every request its own instance would lose each job the moment it returned an id. [`app/api/store.ts`](app/api/store.ts) says so where the decision is implemented.
+
+```bash
+docker build -t papercast .
+docker run -p 3000:3000 -e ANTHROPIC_API_KEY=sk-... papercast
+```
+
+Piper and its two voices are baked into the image. The free local voice is the project's default, and a deployment that quietly swapped it for a paid API would advertise something it does not do.
+
+### The public demo is a shelf, not an upload box
+
+A URL anyone can open, spending an API key on any file they choose, is a bill with no ceiling. `DEMO_MODE=1` turns off uploads and offers three arXiv papers instead, fetched into the image from a manifest rather than committed here — the repository has no right to redistribute other people's documents, and the manifest records where each came from.
+
+Two limits sit behind it, for two different failures. One episode at a time protects the machine, since synthesis holds a neural voice model in memory beside the server. Twenty-five a day protects the bill, and is the one that matters once a link is passed around. Both refuse in the open: a message naming the limit and when it lifts, because a demo that silently queues looks broken and one that silently degrades teaches the visitor nothing.
+
+The shelf also fixed something the local path never noticed. Extraction takes the first text on page one as the title, and arXiv's copy of _Attention Is All You Need_ opens with Google's permission to reproduce its figures — which then travelled into the prompt as the subject of the episode. A caller that knows the title for certain now says so.
+
+```bash
+fly launch --no-deploy --copy-config     # once
+fly secrets set ANTHROPIC_API_KEY=sk-...
+fly deploy
+```
+
+One machine, stopped when nobody is looking, and a job holds its progress stream open for its whole life so a machine is never stopped out from under an episode.
 
 ---
 

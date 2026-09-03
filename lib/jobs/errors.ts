@@ -31,6 +31,19 @@ export function toJobError(err: unknown): JobError {
 
   const raw = err instanceof Error ? err.message : String(err);
 
+  // An exhausted account is not an authentication failure and must not read as
+  // one: the key is fine, the balance is not, and the fix is somewhere else
+  // entirely. Found by deploying — the container's first real run failed here,
+  // and "something went wrong" was all it said.
+  if (/credit balance|insufficient[_ ]quota|billing|payment required|402/i.test(raw)) {
+    return {
+      code: "no_credit",
+      message: "The account behind this provider has run out of credit.",
+      remedy:
+        "Top up the provider account, or run against a local model, which costs nothing.",
+    };
+  }
+
   // Credentials are the most common setup failure and the least useful raw.
   if (/api key|apikey|unauthorized|401|authentication/i.test(raw)) {
     return {

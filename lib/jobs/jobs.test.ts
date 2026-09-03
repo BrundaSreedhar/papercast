@@ -252,6 +252,16 @@ describe("toJobError", () => {
     expect(toJobError(new Error("429 rate limit exceeded")).code).toBe("rate_limited");
   });
 
+  it("tells an empty account apart from a bad key", () => {
+    // Both arrive as a rejected request, and the fixes have nothing in common.
+    const e = toJobError(
+      new Error("400 Your credit balance is too low to access the Anthropic API."),
+    );
+    expect(e.code).toBe("no_credit");
+    expect(e.remedy).toMatch(/local model/);
+    expect(toJobError(new Error("insufficient_quota")).code).toBe("no_credit");
+  });
+
   it("classifies an unreachable provider", () => {
     expect(toJobError(new Error("connect ECONNREFUSED 127.0.0.1:11434")).code).toBe(
       "provider_unreachable",
