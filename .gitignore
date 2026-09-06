@@ -48,3 +48,6 @@ AGENTS.md
 # study ledger (personal)
 learning.json
 learning.json.tmp
+
+# demo papers (fetched from the manifest, not redistributed here)
+demo/papers/

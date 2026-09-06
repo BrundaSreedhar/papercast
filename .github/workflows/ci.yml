@@ -30,3 +30,29 @@ jobs:
       # than passing vacuously, since the papers are not committed.
       - name: Test
         run: npm test
+
+      # The library is typechecked by the step above, but the app is not: it has
+      # its own TypeScript program, its own route contracts, and a compile step
+      # that only runs here. Without this, a broken page reaches a deploy.
+      - name: Build the web app
+        run: npm run build:web
+
+  image:
+    # The deployment is a container, so the Dockerfile is part of the build and
+    # rots like any other code. Built, not pushed: this proves the image still
+    # assembles — dependencies, the Piper runtime, the demo shelf — without
+    # publishing anything or needing a registry credential.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          # Layer cache, so the 150 MB of voices and papers are fetched on the
+          # first run and reused until the Dockerfile changes.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

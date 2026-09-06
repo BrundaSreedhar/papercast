@@ -1,0 +1,30 @@
+# Everything the image builds for itself, or must never carry.
+node_modules
+.next
+dist
+.git
+.github
+coverage
+
+# Secrets. The deployment gets its keys from the platform, not from a layer.
+.env
+.env.*
+!.env.example
+
+# Large local runtimes, fetched into the image instead.
+.venv-tts
+.voices
+.models
+ollama
+
+# Local inputs and outputs.
+sample_papers
+demo/papers
+public/audio/*
+uploads
+*.episode.json
+learning.json
+*.wav
+*.timings.json
+lib/eval/results
+tsconfig.tsbuildinfo

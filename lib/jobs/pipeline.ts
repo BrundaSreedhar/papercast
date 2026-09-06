@@ -44,6 +44,8 @@ export interface RunJobInput {
   reviseRounds?: number;
   /** Identifier the study ledger files this paper under. */
   paperId?: string;
+  /** Authoritative title, when the caller knows it better than extraction can. */
+  paperTitle?: string;
   /** Where to write the finished audio, when audio is wanted. */
   audioPath?: string;
 }
@@ -90,7 +92,14 @@ async function runJobStages(
 
   try {
     step("parsing", 0, "Reading the paper");
-    const paper = await extractPaper(input.pdf);
+    // Extraction takes the first block of text on page one for the title, which
+    // is right for most papers and wrong for the ones that open with a
+    // publisher's notice — arXiv's copy of the transformer paper begins with
+    // Google's permission to reproduce its figures. A caller that knows the
+    // title for certain, as the demo shelf does, says so rather than letting a
+    // legal footer travel into the prompt as the subject of the episode.
+    const extracted = await extractPaper(input.pdf);
+    const paper = input.paperTitle ? { ...extracted, title: input.paperTitle } : extracted;
     store.update(jobId, {
       paperTitle: paper.title,
       percent: overallPercent("parsing", 1, stages),

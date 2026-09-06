@@ -180,3 +180,36 @@ audio { width: 100%; }
   font-size: 0.9rem;
 }
 .err strong { color: var(--error); display: block; margin-bottom: 0.25rem; }
+
+/* ---- the demo shelf ---- */
+.papers { display: grid; gap: 0.6rem; }
+.paper {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.9rem 1rem;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.paper:hover { border-color: var(--accent); background: var(--active-bg); }
+.paper.chosen { border-color: var(--accent); background: var(--active-bg); }
+.paper strong { display: block; font-weight: 600; margin-bottom: 0.2rem; }
+.paper span {
+  display: block;
+  color: var(--muted);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.82rem;
+}
+.paper .who-wrote { color: var(--faint); margin-bottom: 0.25rem; }
+
+.note {
+  color: var(--muted);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.82rem;
+  line-height: 1.6;
+  margin: 1rem 0 0;
+}
