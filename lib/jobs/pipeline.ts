@@ -28,6 +28,9 @@ import { estimateCost } from "../eval/report";
 import { toJobError } from "./errors";
 import { refineEpisode } from "../refine/index";
 import { groundTurns } from "../ground/index";
+import { saveEpisode } from "../library/store";
+import type { EpisodeRecord } from "../library/types";
+import type { EpisodeFormat } from "../llm/generateEpisode";
 import { withSpan } from "../trace/tracer";
 import * as TA from "../trace/attributes";
 import { addUsage } from "../llm/usage";
@@ -60,6 +63,8 @@ export interface RunJobInput {
   paperTitle?: string;
   /** Where to write the finished audio, when audio is wanted. */
   audioPath?: string;
+  /** Two voices, one voice, or one voice explaining to a child. */
+  format?: EpisodeFormat;
 }
 
 /**
@@ -85,6 +90,21 @@ export async function runJob(
     },
     () => runJobStages(store, jobId, input),
   );
+}
+
+/**
+ * Put a finished episode on the shelf.
+ *
+ * Best-effort, like the study ledger: an episode that was produced and can be
+ * listened to right now must not be turned into a failure because a disk write
+ * did not work. It simply will not be there tomorrow, and the log says why.
+ */
+async function shelve(record: EpisodeRecord): Promise<void> {
+  try {
+    await saveEpisode(record);
+  } catch (err) {
+    console.warn(`[job ${record.id}] could not save the episode to the library:`, err);
+  }
 }
 
 /** Anchor turns to the paper, or return nothing. Never throws. */
@@ -173,6 +193,7 @@ async function runJobStages(
     const generated = await generateEpisode(paper, {
       minutes: input.minutes,
       provider: input.provider ? getProvider(input.provider) : undefined,
+      format: input.format,
     });
     // LLM spend accumulates across scripting and review; the store replaces cost
     // fields rather than adding to them, so the running total lives here. It
@@ -261,6 +282,25 @@ async function runJobStages(
     const citations = ground(episode, paper);
 
     if (!input.audioPath) {
+      await shelve({
+        id: jobId,
+        createdAt: Date.now(),
+        paperTitle: paper.title,
+        paperId: input.paperId,
+        minutes: input.minutes,
+        format: input.format ?? "dialogue",
+        provider: generated.provider,
+        model: generated.model,
+        turnCount: episode.turns.length,
+        hasAudio: false,
+        review,
+        // No synthesis happened on this path, so the call count is honestly zero
+        // rather than absent.
+        cost: { ...costSoFar(), ttsCalls: 0 },
+        episode,
+        citations,
+        paper,
+      });
       await update({
         stage: "done",
         percent: 100,
@@ -329,6 +369,27 @@ async function runJobStages(
     } catch (err) {
       console.warn(`[job ${jobId}] could not update the study ledger:`, err);
     }
+
+    await shelve({
+      id: jobId,
+      createdAt: Date.now(),
+      paperTitle: paper.title,
+      paperId: input.paperId,
+      minutes: input.minutes,
+      format: input.format ?? "dialogue",
+      provider: generated.provider,
+      model: generated.model,
+      turnCount: episode.turns.length,
+      totalMs: audio.totalMs,
+      hasAudio: true,
+      transcriptRecall,
+      review,
+      cost: { ...costSoFar(), ttsCalls: audio.calls },
+      episode,
+      citations,
+      timings: audio.timings,
+      paper,
+    });
 
     await update({
       stage: "done",

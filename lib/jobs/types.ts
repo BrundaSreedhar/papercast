@@ -144,7 +144,13 @@ export interface Job {
   stage: JobStage;
   percent: number;
   paperTitle?: string;
-  options: { minutes: number; provider?: string; verify: boolean; revise?: boolean };
+  options: {
+    minutes: number;
+    provider?: string;
+    verify: boolean;
+    revise?: boolean;
+    format?: "dialogue" | "solo" | "eli5";
+  };
   cost: JobCost;
   events: JobEvent[];
   result?: JobResult;

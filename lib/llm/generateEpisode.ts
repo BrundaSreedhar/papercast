@@ -100,7 +100,7 @@ export type EpisodeFormat = "dialogue" | "solo" | "eli5";
  * has. Shared verbatim so a change to what counts as honest can never apply to
  * one format and not the other.
  */
-const FAITHFULNESS = `FAITHFULNESS — this is the top priority:
+export const FAITHFULNESS = `FAITHFULNESS — this is the top priority:
 - Use ONLY information contained in the provided paper. Do not add outside facts, prior knowledge, comparisons, or citations that are not in the text.
 - Never invent numbers, results, author names, dataset names, or references. If a detail isn't in the paper, don't state it.
 - If the paper is ambiguous or silent on something, either omit it or say the paper does not specify — do not fill the gap with a guess.
@@ -183,7 +183,8 @@ function soloPrompt(args: {
 ${FAITHFULNESS}
 
 STRUCTURE — tell it as a story, in this order:
-- THE HOOK: open with the real-world question or the surprising problem this paper takes on. Take it from the paper's own motivation, not from what you know about the field.
+- THE WELCOME: two or three sentences before anything technical. Greet the listener warmly, say what paper this is and who wrote it, and give them a reason to care about the next few minutes. Speak to one person, not an audience. Warm does not mean padded, and it does not mean hyped: no "buckle up", no "dive"/"diving into", no "unpack", no throat-clearing about how fascinating the topic is. Do not call the work groundbreaking, revolutionary, or a paradigm shift unless the paper says so itself — describing a paper as important is a claim about it, and it is not yours to make.
+- THE HOOK: then the real-world question or the surprising problem this paper takes on. Take it from the paper's own motivation, not from what you know about the field.
 - THE CONTEXT: what earlier approaches could not do, or what gap the paper says existed — only as the paper describes it.
 - THE CORE: what the researchers actually did and what they found, as a logical progression rather than a list of results. This is the longest part of the episode.
 - THE IMPACT: what the paper says this changes, and what it names as limitations or future work. If the paper does not claim an implication, do not supply one.
@@ -194,6 +195,7 @@ FORMAT AND LENGTH — both requirements are mandatory:
 - The turns are read back to back as uninterrupted speech, so each one must continue directly from the last. Never re-introduce the topic, re-greet the listener, or restate what was just said.
 - The episode must total roughly ${wordTarget} words (about ${minutes} minutes at ${WORDS_PER_MINUTE} words/minute). This is a real target, not an upper bound; a short episode is a failed one.
 - Explain jargon the moment you use it, with a one-line analogy where that earns its place. Never leave a technical term standing on its own.
+- The voice is warm throughout, not only at the open: talk to the listener, use "you" where it is natural, and let curiosity show. Close by telling them what they now know, briefly, rather than stopping mid-thought.
 - Write spoken language: contractions, short sentences, no markdown, no bullet points, no headings.
 - Write NO stage directions, tone cues, or bracketed annotations of any kind — no [pause], no [emphasis], no [tone shifts]. This text is fed straight to a speech synthesizer, which reads such marks aloud as words. Carry the pacing in the sentences themselves.
 - Cover the paper's core contributions in proportion to their importance rather than padding.${figuresLine(args.hasFigures)}

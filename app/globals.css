@@ -361,3 +361,115 @@ audio {
   line-height: 1.6;
   margin: 1rem 0 0;
 }
+
+/* ── the library ─────────────────────────────────────────────────────── */
+
+.shelf {
+  list-style: none;
+  margin: 1.5rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.6rem;
+}
+.shelf-item {
+  display: block;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: inherit;
+  text-decoration: none;
+  transition:
+    border-color 0.2s,
+    background 0.2s;
+}
+.shelf-item:hover {
+  border-color: var(--accent);
+  background: var(--active-bg);
+}
+.shelf-item strong {
+  display: block;
+  line-height: 1.35;
+}
+.shelf-meta,
+.shelf-score {
+  display: block;
+  margin-top: 0.3rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.shelf-score {
+  color: var(--accent);
+}
+
+/* ── asking the paper ────────────────────────────────────────────────── */
+
+.chat {
+  margin-top: 2rem;
+}
+.chat h2 {
+  margin: 0 0 0.2rem;
+  font-size: 1.05rem;
+}
+.exchange {
+  margin-top: 1.2rem;
+  padding-top: 1.2rem;
+  border-top: 1px solid var(--line);
+}
+.exchange .q {
+  margin: 0 0 0.5rem;
+  font-weight: 600;
+}
+.exchange .a {
+  margin: 0;
+}
+.exchange .err-text {
+  color: var(--error);
+}
+/* Sources are the evidence, so they sit with the answer rather than below the
+   fold — quiet, but never hidden behind an expander. */
+.sources {
+  margin: 0.4rem 0 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+  cursor: help;
+}
+.ask {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1.2rem;
+}
+.ask input {
+  flex: 1;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.92rem;
+}
+.ask input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.ask button {
+  padding: 0.6rem 1rem;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: var(--bg);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ask button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+/* An answer asserting something about the paper with nothing found to back it
+   is the failure mode worth interrupting a reader over, so it is not grey. */
+.sources.unsupported {
+  color: var(--error);
+  cursor: default;
+}

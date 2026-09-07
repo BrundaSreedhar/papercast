@@ -92,6 +92,56 @@ export interface PaperStructure {
   source?: PaperSource;
 }
 
+/**
+ * Front matter a publisher puts above the title.
+ *
+ * Extraction takes the first substantial block on page one as the title, which
+ * is right for most papers and wrong for the ones that open with a legal
+ * notice. arXiv's copy of the transformer paper begins with three lines of
+ * Google granting permission to reproduce its figures, and that travelled all
+ * the way into the prompt as the subject of the episode.
+ *
+ * These patterns are deliberately specific to publishing and licensing
+ * language. A paper whose real title contains "grants permission" or "all
+ * rights reserved" verbatim is not a thing, whereas a loose match on
+ * "copyright" would swallow a paper about copyright.
+ */
+const FRONT_MATTER = [
+  /grants? permission/i,
+  /provided proper attribution/i,
+  /permission to (?:make|reproduce|copy)/i,
+  /for personal or classroom use is granted/i,
+  /all rights reserved/i,
+  /licen[sc]ed under/i,
+  /this work is licensed/i,
+  /creative commons/i,
+  /\bcc[ -]by\b/i,
+  /\barxiv:\s*\d/i,
+  /\bdoi:\s*10\./i,
+  /preprint\.?\s+(?:under review|submitted)/i,
+];
+
+function isFrontMatterNotice(text: string): boolean {
+  return FRONT_MATTER.some((re) => re.test(text));
+}
+
+/**
+ * Index of the last line of the sentence starting at `from`.
+ *
+ * Bounded, because a notice that never terminates must not eat the paper.
+ */
+function endOfSentence(lines: string[], from: number): number {
+  const limit = Math.min(lines.length - 1, from + MAX_NOTICE_LINES);
+  for (let k = from; k <= limit; k++) {
+    const line = lines[k]!.trim();
+    if (!line || line.endsWith(".")) return k;
+  }
+  return limit;
+}
+
+/** How far a publisher's notice may run before we stop treating it as one. */
+const MAX_NOTICE_LINES = 5;
+
 /** Bounds on how far a wrapped title may run before we stop joining lines. */
 const MAX_TITLE_LINES = 3;
 const MAX_TITLE_CHARS = 250;
@@ -202,8 +252,40 @@ function looksLikeAuthorLine(line: string): boolean {
   // A comma-separated list of three or more fragments.
   if ((line.match(/,/g) ?? []).length >= 2) return true;
 
+  // A footnote or affiliation marker: the asterisks, daggers and superscript
+  // digits that hang off a name and never off a title.
+  if (/[∗*†‡§¶]|[\u00b9\u00b2\u00b3\u2070-\u209f]/.test(line)) return true;
+
+  // A bare personal name: two or three capitalized words and nothing else.
+  //
+  // Titles wrap onto a second line all the time, but the continuation almost
+  // always carries a lowercase function word — "for", "in", "with", "of" — or
+  // punctuation. A line that is nothing but capitalized words is a byline, and
+  // treating it as part of the title is how "Attention Is All You Need" became
+  // "Attention Is All You Need Ashish Vaswani".
+  const words = line.trim().split(/\s+/);
+  if (words.length <= 3 && words.every((w) => /^[A-Z][a-zA-Z.'’-]*$/.test(w)))
+    return true;
+
+  // Names run together with no space between them, which is what a two-column
+  // author block collapses to: "Kaiming HeXiangyu ZhangShaoqing RenJian Sun".
+  // Two or more, so a title containing one legitimately camel-cased product
+  // name is not mistaken for a byline.
+  if (words.filter((w) => /[a-z][A-Z]/.test(w)).length >= 2) return true;
+
   return false;
 }
+
+/**
+ * Words a line ends on when the title carries over onto the next one.
+ *
+ * A wrapped title is a phrase cut in half, and the half that is left almost
+ * always ends on a function word: "Retrieval-Augmented Generation for" /
+ * "Knowledge-Intensive NLP Tasks". Without this the continuation reads as a
+ * byline — capitalized words and nothing else — and the title is truncated.
+ */
+const WRAPS_ONTO_NEXT_LINE =
+  /\b(?:a|an|the|for|of|in|on|at|to|with|and|or|via|from|by|using|under|over|through|towards?|between|against|into)$/i;
 
 /** Split text into lines, recording where each one starts. */
 function splitLines(text: string): SourceLine[] {
@@ -286,25 +368,38 @@ export function parsePaperStructure(raw: string): PaperStructure {
   let firstContentIdx = 0;
   for (let i = 0; i < lines.length; i++) {
     const t = lines[i]!.trim();
-    if (t.length >= 4 && !isHeading(t)) {
-      const parts = [t];
-      let j = i + 1;
-      while (
-        j < lines.length &&
-        parts.length < MAX_TITLE_LINES &&
-        parts.join(" ").length < MAX_TITLE_CHARS
-      ) {
-        const next = lines[j]!.trim();
-        if (!next || isHeading(next) || looksLikeAuthorLine(next)) break;
-        parts.push(next);
-        j++;
-      }
-      title = parts.join(" ").replace(/\s+/g, " ").trim();
-      // `j` indexes the terminating blank/heading line, which the section loop
-      // below still needs to see.
-      firstContentIdx = j;
-      break;
+    if (t.length < 4 || isHeading(t)) continue;
+
+    const parts = [t];
+    let j = i + 1;
+    while (
+      j < lines.length &&
+      parts.length < MAX_TITLE_LINES &&
+      parts.join(" ").length < MAX_TITLE_CHARS
+    ) {
+      const next = lines[j]!.trim();
+      // A line left hanging on "for" or "of" is mid-phrase, so whatever follows
+      // belongs to the title whether or not it looks like a name.
+      const wrapping = WRAPS_ONTO_NEXT_LINE.test(parts.join(" ").trim());
+      if (!next || isHeading(next) || (!wrapping && looksLikeAuthorLine(next))) break;
+      parts.push(next);
+      j++;
     }
+
+    // A publisher's notice above the title is not the title, and it is a
+    // sentence rather than a block: skipping to the end of it lands on the
+    // title even when no blank line separates the two. Joining first and
+    // testing the result would swallow the title along with the notice.
+    if (isFrontMatterNotice(t)) {
+      i = endOfSentence(lines, i);
+      continue;
+    }
+
+    title = parts.join(" ").replace(/\s+/g, " ").trim();
+    // `j` indexes the terminating blank/heading line, which the section loop
+    // below still needs to see.
+    firstContentIdx = j;
+    break;
   }
 
   // Group remaining lines into sections keyed by the latest heading.

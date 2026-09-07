@@ -6,6 +6,7 @@ import { demo, gate } from "../demo";
 import { loadCatalogue, paperPath } from "@/lib/demo/index";
 import { runJob } from "@/lib/jobs/pipeline";
 import type { ProviderName } from "@/lib/config/env";
+import type { EpisodeFormat } from "@/lib/llm/generateEpisode";
 import type { TTSProviderName } from "@/lib/tts/index";
 
 export const runtime = "nodejs";
@@ -48,6 +49,11 @@ export async function POST(req: Request) {
   const provider = demo.enabled
     ? undefined
     : ((form.get("provider") as ProviderName | null) ?? undefined);
+  // Anything unrecognized falls back to the dialogue rather than erroring: the
+  // format changes how an episode sounds, not whether one can be made.
+  const asked_format = form.get("format");
+  const format: EpisodeFormat =
+    asked_format === "solo" || asked_format === "eli5" ? asked_format : "dialogue";
 
   if (demo.enabled) {
     const admission = gate.admit();
@@ -59,7 +65,7 @@ export async function POST(req: Request) {
     }
   }
 
-  const job = await store.create({ minutes, provider, verify, revise });
+  const job = await store.create({ minutes, provider, verify, revise, format });
   await mkdir(AUDIO_DIR, { recursive: true });
 
   // Deliberately not awaited: the response returns an id immediately and the
@@ -72,6 +78,7 @@ export async function POST(req: Request) {
     ttsProvider: (form.get("tts") as TTSProviderName | null) ?? undefined,
     verify,
     revise,
+    format,
     paperId: input.paperId,
     paperTitle: input.paperTitle,
     audioPath: join(AUDIO_DIR, `${job.id}.wav`),

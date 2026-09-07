@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   TranscriptPlayer,
@@ -73,6 +74,7 @@ export default function Home() {
   const [verify, setVerify] = useState(false);
   const [revise, setRevise] = useState(false);
   const [provider, setProvider] = useState("open");
+  const [format, setFormat] = useState("dialogue");
   const [over, setOver] = useState(false);
 
   const [progress, setProgress] = useState<Progress | null>(null);
@@ -121,6 +123,7 @@ export default function Home() {
     body.set("minutes", String(minutes));
     body.set("verify", String(verify));
     body.set("revise", String(revise));
+    body.set("format", format);
     if (!demo) body.set("provider", provider);
 
     const res = await fetch("/api/jobs", { method: "POST", body });
@@ -214,7 +217,7 @@ export default function Home() {
     // Deliberately not closing: EventSource reconnects on its own, and the
     // reconcile covers the case where the job ended while it was disconnected.
     source.onerror = () => void reconcile();
-  }, [demo, ready, file, paperId, minutes, verify, revise, provider]);
+  }, [demo, ready, file, paperId, minutes, verify, revise, provider, format]);
 
   // Only show the stages this run will actually pass through, so the stepper
   // matches the progress bar instead of stranding a step that never runs.
@@ -229,7 +232,8 @@ export default function Home() {
     <main className="wrap">
       <h1>PaperCast</h1>
       <p className="sub">
-        A paper in, a two-host episode out — saying only what the paper says.
+        A paper in, an episode out — saying only what the paper says.{" "}
+        <Link href="/library">Library →</Link>
       </p>
 
       {!running && !summary && (
@@ -319,6 +323,14 @@ export default function Home() {
                 </select>
               </label>
             )}
+            <label>
+              Format
+              <select value={format} onChange={(e) => setFormat(e.target.value)}>
+                <option value="dialogue">two hosts</option>
+                <option value="solo">solo</option>
+                <option value="eli5">explain like I&apos;m 5</option>
+              </select>
+            </label>
             <label>
               <input
                 type="checkbox"

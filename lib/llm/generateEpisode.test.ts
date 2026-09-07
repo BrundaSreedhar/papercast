@@ -139,11 +139,34 @@ describe("the solo format", () => {
     expect(sys).toMatch(/reads such marks aloud/i);
   });
 
+  it("opens warmly before it opens technically", async () => {
+    const provider = new StubProvider();
+    await generateEpisode(PAPER, { provider, format: "solo" });
+    const sys = provider.last!.system;
+    expect(sys).toContain("THE WELCOME");
+    expect(sys).toMatch(/greet the listener warmly/i);
+    expect(sys).toMatch(/speak to one person/i);
+    // Warmth is not a licence to pad — the failure mode is three sentences of
+    // enthusiasm before any content.
+    expect(sys).toMatch(/no "buckle up"/i);
+    // Calling a paper groundbreaking is a claim about the paper, and the whole
+    // point is not to make claims the paper does not.
+    expect(sys).toMatch(
+      /groundbreaking, revolutionary, or a paradigm shift unless the paper says so/i,
+    );
+  });
+
   it("gives the talk a narrative arc the dialogue does not need", async () => {
     const provider = new StubProvider();
     await generateEpisode(PAPER, { provider, format: "solo" });
     const sys = provider.last!.system;
-    for (const beat of ["THE HOOK", "THE CONTEXT", "THE CORE", "THE IMPACT"]) {
+    for (const beat of [
+      "THE WELCOME",
+      "THE HOOK",
+      "THE CONTEXT",
+      "THE CORE",
+      "THE IMPACT",
+    ]) {
       expect(sys).toContain(beat);
     }
     // The arc must not become a licence to speculate past the paper.
