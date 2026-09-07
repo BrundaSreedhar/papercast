@@ -25,9 +25,22 @@ function pct(n: number | undefined): string {
   return n === undefined ? "—" : `${(n * 100).toFixed(0)}%`;
 }
 
-function usd(n: number | undefined): string {
-  if (n === undefined) return "free";
-  return n < 0.01 ? `$${n.toFixed(4)}` : `$${n.toFixed(3)}`;
+/**
+ * What a run cost, or an honest blank.
+ *
+ * "free" is claimed only for the self-hosted `open` provider, which is the one
+ * that genuinely costs nothing per token. A hosted model with no entry in the
+ * price table is *unknown*, not free, and printing free would understate a real
+ * bill in the one table people read to compare providers against each other.
+ */
+function cost(
+  provider: string,
+  model: string,
+  usage: { inputTokens?: number; outputTokens?: number; cacheReadTokens?: number },
+): string {
+  const n = estimateCost(model, usage);
+  if (n !== undefined) return n < 0.01 ? `$${n.toFixed(4)}` : `$${n.toFixed(3)}`;
+  return provider === "open" ? "free" : "—";
 }
 
 function secs(ms: number | undefined): string {
@@ -61,7 +74,7 @@ export function renderMarkdown(results: EvalResult[]): string {
       `| ${r.paperId} | \`${r.generator.model}\` | ${pct(r.faithfulness?.faithfulness)} | ` +
         `${pct(r.faithfulness?.hallucinationRate)} | ${pct(r.coverage?.coverage)} | ` +
         `${pct(r.deterministic.complianceScore)} | ${r.deterministic.errors} | ` +
-        `${usd(estimateCost(r.generator.model, r.generationCost ?? {}))} | ` +
+        `${cost(r.generator.provider, r.generator.model, r.generationCost ?? {})} | ` +
         `${secs(r.generationCost?.latencyMs)} | ${r.selfJudged ? "yes" : "no"} |`,
     );
   }
@@ -71,12 +84,14 @@ export function renderMarkdown(results: EvalResult[]): string {
   lines.push(
     "- **Halluc.** — share of claims the paper contradicts, plus specific claims it never makes. Vague framing is excluded; asserting a number the paper does not give is not the same as saying the work is interesting.",
   );
-  lines.push("- **Coverage** — share of the paper's annotated key contributions the episode conveys.");
+  lines.push(
+    "- **Coverage** — share of the paper's annotated key contributions the episode conveys.",
+  );
   lines.push(
     "- **Compliance** — deterministic checks passed: schema, alternation, length targets, and grounding of names and figures.",
   );
   lines.push(
-    "- **Cost** — generation only, at list prices. Local models are free to run and are marked accordingly.",
+    "- **Cost** — generation only, at list prices. Locally run models are free and marked so; a hosted model with no published price in this harness shows as — rather than being reported as free.",
   );
 
   const anySelf = results.some((r) => r.selfJudged);
@@ -91,7 +106,9 @@ export function renderMarkdown(results: EvalResult[]): string {
   if (failed.length) {
     lines.push("", "## Deterministic failures", "");
     for (const r of failed) {
-      const bad = r.deterministic.checks.filter((c) => !c.passed && c.severity === "error");
+      const bad = r.deterministic.checks.filter(
+        (c) => !c.passed && c.severity === "error",
+      );
       lines.push(`**${r.paperId} · ${r.generator.model}**`);
       for (const c of bad) lines.push(`- \`${c.id}\` — ${c.detail}`);
       lines.push("");

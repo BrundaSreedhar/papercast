@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import { ZodError } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
-import { openConfig } from "../config/env";
+import { openConfig, type ProviderName } from "../config/env";
 import { assertNoSilentTruncation } from "./contextGuard";
 import { joinCacheableContext } from "./promptParts";
 import type { LLMProvider, StructuredRequest, StructuredResult, Usage } from "./types";
@@ -26,14 +26,30 @@ type Attempt<T> = { ok: true; data: T } | { ok: false; error: unknown; content: 
  * on failure. That coercion + validation-retry loop is what makes an open model
  * a first-class citizen next to Claude and GPT.
  */
+/** Everything this adapter needs to talk to an endpoint. */
+export interface OpenCompatibleConfig {
+  baseURL: string;
+  apiKey: string;
+  model: string;
+}
+
 export class OpenCompatibleProvider implements LLMProvider {
-  readonly name = "open" as const;
+  readonly name: ProviderName;
   readonly model: string;
   private client: OpenAI;
 
-  constructor() {
-    const cfg = openConfig();
-    this.client = new OpenAI({ apiKey: cfg.apiKey, baseURL: cfg.baseURL });
+  /**
+   * Defaults to the self-hosted `open` endpoint. Anything else that speaks the
+   * OpenAI protocol — Gemini's compatibility layer, Together, Groq — passes its
+   * own name and config and reuses every line below it.
+   */
+  constructor(name: ProviderName = "open", cfg: OpenCompatibleConfig = openConfig()) {
+    this.name = name;
+    // The SDK retries 429s and 5xx on its own; the default of two attempts is
+    // thin for endpoints that fail under load. A job here is minutes of work
+    // and a real bill, so losing it to one bad minute at the provider is a
+    // worse trade than waiting a few more seconds.
+    this.client = new OpenAI({ apiKey: cfg.apiKey, baseURL: cfg.baseURL, maxRetries: 4 });
     this.model = cfg.model;
   }
 

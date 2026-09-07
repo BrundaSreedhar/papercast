@@ -1,4 +1,4 @@
-import { activeProvider, type ProviderName } from "../config/env";
+import { activeProvider, geminiConfig, type ProviderName } from "../config/env";
 import type { LLMProvider } from "./types";
 import { AnthropicProvider } from "./anthropic";
 import { OpenAIProvider } from "./openai";
@@ -22,6 +22,10 @@ function build(name: ProviderName): LLMProvider {
       return new AnthropicProvider();
     case "openai":
       return new OpenAIProvider();
+    case "gemini":
+      // Gemini speaks the OpenAI protocol, so it reuses that adapter rather
+      // than adding a second SDK to reach the same guaranteed shape.
+      return new OpenCompatibleProvider("gemini", geminiConfig());
     case "open":
       return new OpenCompatibleProvider();
   }

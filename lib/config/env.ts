@@ -3,14 +3,12 @@ import dotenv from "dotenv";
 // Load .env once, on first import. Safe to call repeatedly.
 dotenv.config();
 
-export type ProviderName = "anthropic" | "openai" | "open";
+export type ProviderName = "anthropic" | "openai" | "gemini" | "open";
 
 function req(name: string): string {
   const v = process.env[name];
   if (!v || !v.trim()) {
-    throw new Error(
-      `Missing required environment variable: ${name}. See .env.example.`,
-    );
+    throw new Error(`Missing required environment variable: ${name}. See .env.example.`);
   }
   return v;
 }
@@ -26,9 +24,9 @@ function opt(name: string, fallback: string): string {
  */
 export function activeProvider(): ProviderName {
   const p = opt("LLM_PROVIDER", "anthropic").toLowerCase();
-  if (p === "anthropic" || p === "openai" || p === "open") return p;
+  if (p === "anthropic" || p === "openai" || p === "gemini" || p === "open") return p;
   throw new Error(
-    `LLM_PROVIDER must be one of "anthropic" | "openai" | "open" (got "${p}").`,
+    `LLM_PROVIDER must be one of "anthropic" | "openai" | "gemini" | "open" (got "${p}").`,
   );
 }
 
@@ -51,6 +49,24 @@ export const piperConfig = () => ({
   binary: opt("PIPER_BIN", ".venv-tts/bin/piper"),
   hostVoice: opt("PIPER_HOST_VOICE", ".voices/en_US-lessac-medium.onnx"),
   guestVoice: opt("PIPER_GUEST_VOICE", ".voices/en_US-ryan-medium.onnx"),
+});
+
+/**
+ * Gemini, reached over its OpenAI-compatible endpoint rather than its own SDK.
+ *
+ * Google publishes a compatibility layer that speaks the OpenAI wire protocol,
+ * which means the adapter this project already has — schema in the prompt, Zod
+ * validation, retry with the parse error fed back — works unchanged. Adding a
+ * second SDK and a fourth hand-written adapter to reach the same guaranteed
+ * shape would be a dependency and a hundred lines bought for nothing.
+ */
+export const geminiConfig = () => ({
+  apiKey: req("GEMINI_API_KEY"),
+  model: opt("GEMINI_MODEL", "gemini-2.5-flash"),
+  baseURL: opt(
+    "GEMINI_BASE_URL",
+    "https://generativelanguage.googleapis.com/v1beta/openai/",
+  ),
 });
 
 export const openConfig = () => ({
