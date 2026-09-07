@@ -101,11 +101,147 @@ describe("speaker and show-name guardrails", () => {
   });
 });
 
+describe("the solo format", () => {
+  it("asks for one narrated voice and forbids the other two", async () => {
+    const provider = new StubProvider();
+    await generateEpisode(PAPER, { provider, format: "solo" });
+    const sys = provider.last!.system;
+    expect(sys).toMatch(/EVERY turn has the speaker "narrator"/);
+    expect(sys).toMatch(/no turn may use "host" or "guest"/i);
+  });
+
+  it("keeps every faithfulness rule the dialogue has", async () => {
+    // The point of the solo format is a second voice, not a second standard.
+    const dialogue = new StubProvider();
+    const solo = new StubProvider();
+    await generateEpisode(PAPER, { provider: dialogue });
+    await generateEpisode(PAPER, { provider: solo, format: "solo" });
+    const block = (s: string) =>
+      s.slice(s.indexOf("FAITHFULNESS"), s.indexOf("\n\n", s.indexOf("FAITHFULNESS")));
+    expect(block(solo.last!.system)).toBe(block(dialogue.last!.system));
+  });
+
+  it("carries the anti-fabrication rules over to a single speaker", async () => {
+    const provider = new StubProvider();
+    await generateEpisode(PAPER, { provider, format: "solo" });
+    const sys = provider.last!.system;
+    expect(sys).toMatch(/the speaker has no name/i);
+    expect(sys).toMatch(/the speaker did not write the paper/i);
+    expect(sys).toMatch(/no credentials, degrees, honorifics/i);
+    expect(sys).toMatch(/never describe yourself as an expert/i);
+  });
+
+  it("bans bracketed stage directions, which a synthesizer reads aloud", async () => {
+    const provider = new StubProvider();
+    await generateEpisode(PAPER, { provider, format: "solo" });
+    const sys = provider.last!.system;
+    expect(sys).toMatch(/no \[pause\]/i);
+    expect(sys).toMatch(/reads such marks aloud/i);
+  });
+
+  it("gives the talk a narrative arc the dialogue does not need", async () => {
+    const provider = new StubProvider();
+    await generateEpisode(PAPER, { provider, format: "solo" });
+    const sys = provider.last!.system;
+    for (const beat of ["THE HOOK", "THE CONTEXT", "THE CORE", "THE IMPACT"]) {
+      expect(sys).toContain(beat);
+    }
+    // The arc must not become a licence to speculate past the paper.
+    expect(sys).toMatch(/if the paper does not claim an implication, do not supply one/i);
+  });
+
+  it("leaves the dialogue prompt untouched", async () => {
+    const provider = new StubProvider();
+    await generateEpisode(PAPER, { provider });
+    const sys = provider.last!.system;
+    expect(sys).toContain("two-host dialogue");
+    expect(sys).not.toContain("narrator");
+    expect(sys).not.toContain("THE HOOK");
+  });
+});
+
+describe("the explain-like-I'm-5 format", () => {
+  it("keeps every faithfulness rule the dialogue has", async () => {
+    const dialogue = new StubProvider();
+    const eli5 = new StubProvider();
+    await generateEpisode(PAPER, { provider: dialogue });
+    await generateEpisode(PAPER, { provider: eli5, format: "eli5" });
+    const block = (s: string) =>
+      s.slice(s.indexOf("FAITHFULNESS"), s.indexOf("\n\n", s.indexOf("FAITHFULNESS")));
+    expect(block(eli5.last!.system)).toBe(block(dialogue.last!.system));
+  });
+
+  it("requires analogies to be marked as analogies", async () => {
+    // An analogy stated as fact is a claim the paper never made; stated as a
+    // comparison it stays framing, which the judge excludes from hallucination.
+    const provider = new StubProvider();
+    await generateEpisode(PAPER, { provider, format: "eli5" });
+    const sys = provider.last!.system;
+    expect(sys).toMatch(/always mark a comparison as a comparison/i);
+    expect(sys).toMatch(
+      /never state a comparison as though it were something the paper says/i,
+    );
+  });
+
+  it("bans invented proper nouns, which the proper-noun check would fail", async () => {
+    const provider = new StubProvider();
+    await generateEpisode(PAPER, { provider, format: "eli5" });
+    expect(provider.last!.system).toMatch(
+      /no brand names, product names, company names/i,
+    );
+  });
+
+  it("refuses to round a real number into a different one", async () => {
+    const provider = new StubProvider();
+    await generateEpisode(PAPER, { provider, format: "eli5" });
+    expect(provider.last!.system).toMatch(
+      /never round a real number into a different one/i,
+    );
+  });
+
+  it("keeps the summary and key points plain rather than simplified", async () => {
+    // They are what the eval and the interface read.
+    const provider = new StubProvider();
+    await generateEpisode(PAPER, { provider, format: "eli5" });
+    expect(provider.last!.system).toMatch(/these two stay plain, accurate and grown-up/i);
+  });
+
+  it("bans the bracketed cues the format invites", async () => {
+    const provider = new StubProvider();
+    await generateEpisode(PAPER, { provider, format: "eli5" });
+    const sys = provider.last!.system;
+    expect(sys).toMatch(/no \[smiles\]/i);
+    expect(sys).toMatch(/reads such marks aloud/i);
+  });
+
+  it("uses the four story beats and narrates throughout", async () => {
+    const provider = new StubProvider();
+    await generateEpisode(PAPER, { provider, format: "eli5" });
+    const sys = provider.last!.system;
+    for (const beat of [
+      "THE BIG WONDER",
+      "THE PROBLEM",
+      "THE SIMPLE SOLUTION",
+      "WHY IT'S COOL",
+    ]) {
+      expect(sys).toContain(beat);
+    }
+    expect(sys).toMatch(/EVERY turn has the speaker "narrator"/);
+  });
+});
+
 describe("targetTurnCount", () => {
   it("scales with length and enforces a conversational floor", () => {
     expect(targetTurnCount(4)).toBe(14);
     expect(targetTurnCount(1)).toBeGreaterThanOrEqual(6);
     expect(targetTurnCount(10)).toBeGreaterThan(targetTurnCount(4));
+  });
+
+  it("asks for fewer, longer beats in a monologue than turns in a dialogue", () => {
+    // A monologue beat runs three to six sentences; asking for the dialogue
+    // count would chop the talk into fragments.
+    expect(targetTurnCount(4, "solo")).toBeLessThan(targetTurnCount(4));
+    expect(targetTurnCount(4, "solo")).toBe(8);
   });
 
   it("states the turn floor and word target in the prompt", async () => {

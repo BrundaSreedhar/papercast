@@ -41,10 +41,28 @@ function wordCount(s: string): number {
  * Word-level index of the paper. Substring matching is too loose here — "Al"
  * would be found inside "Availability" and a fabricated name would slip past.
  */
+/**
+ * Every word the paper contains, for checking that a name traces back to it.
+ *
+ * The wrap hyphen has to go first. A PDF breaking "Zero-Downtime" across a
+ * column edge stores it as "Zero-\nDowntime", and a check that reads the text
+ * literally then reports a correctly grounded proper noun as invented — the
+ * worst kind of failure in a harness whose job is telling real fabrication from
+ * imagined, since it teaches you to distrust the checks.
+ */
 function paperWords(ctx: CheckContext): Set<string> {
   const set = new Set<string>();
-  for (const m of paperToText(ctx.paper).toLowerCase().matchAll(/[a-z0-9'’-]+/g)) {
-    set.add(m[0]);
+  const raw = paperToText(ctx.paper).toLowerCase();
+  const WRAP = /-[ \t]*\r?\n[ \t]*/g;
+  // A hyphen at a line end is ambiguous: it is either the PDF breaking a word
+  // ("proc-\nessing" → processing) or a real hyphen that happened to land there
+  // ("zero-\ndowntime" → zero-downtime). Both readings are legitimate, and
+  // guessing wrong reports a grounded name as invented, so both are admitted.
+  for (const text of [raw, raw.replace(WRAP, ""), raw.replace(WRAP, "-")]) {
+    for (const m of text.matchAll(/[a-z0-9'’-]+/g)) {
+      set.add(m[0]);
+      for (const part of m[0].split("-")) if (part) set.add(part);
+    }
   }
   return set;
 }
@@ -78,10 +96,52 @@ export function checkSchema(ctx: CheckContext): CheckResult {
     : fail(id, label, "error", parsed.error.issues.map((i) => i.message).join("; "));
 }
 
+/**
+ * Which format an episode is in, read from the turns themselves.
+ *
+ * The format is not recorded on the episode, and deliberately so: a check that
+ * trusted a declared format would pass an episode that claimed to be solo and
+ * wasn't. Reading it from the speakers means the checks grade what is actually
+ * there.
+ */
+export function episodeFormat(episode: CheckContext["episode"]): "dialogue" | "solo" {
+  const turns = episode.turns;
+  return turns.length > 0 && turns.every((t) => t.speaker === "narrator")
+    ? "solo"
+    : "dialogue";
+}
+
+/**
+ * Speaker structure, which means two different things depending on the format.
+ *
+ * A two-voice episode must strictly alternate: the failure this was written to
+ * catch is a dialogue collapsing into consecutive turns by one speaker, which
+ * reads as a monologue wearing a conversation's clothes. A solo episode is
+ * consecutive `narrator` turns by construction, so alternation cannot apply —
+ * but the two must never be mixed, because a stray `host` line in a monologue
+ * is a second voice nobody will synthesize.
+ *
+ * Distinguishing them by the speaker name rather than a flag is what keeps the
+ * original check intact: a collapsed dialogue still says "host", so it still
+ * fails, and only a deliberately solo episode takes the other branch.
+ */
 export function checkAlternation(ctx: CheckContext): CheckResult {
   const id = "alternation";
-  const label = "Speakers strictly alternate";
+  const label = "Speakers are structured for the format";
   const turns = ctx.episode.turns;
+
+  const narrated = turns.filter((t) => t.speaker === "narrator").length;
+  if (narrated > 0) {
+    return narrated === turns.length
+      ? ok(id, label, "error")
+      : fail(
+          id,
+          label,
+          "error",
+          `Mixed formats: ${narrated} of ${turns.length} turns are narrated and the rest are not.`,
+        );
+  }
+
   for (let i = 1; i < turns.length; i++) {
     if (turns[i]!.speaker === turns[i - 1]!.speaker) {
       return fail(id, label, "error", `Turns ${i - 1} and ${i} share a speaker.`);
@@ -92,8 +152,11 @@ export function checkAlternation(ctx: CheckContext): CheckResult {
 
 export function checkTurnCount(ctx: CheckContext): CheckResult {
   const id = "turn-count";
-  const label = "Meets the dialogue turn floor";
-  const target = targetTurnCount(ctx.minutes);
+  const label = "Meets the turn floor for the format";
+  // A monologue needs fewer, longer beats than a dialogue needs turns, so
+  // grading a solo episode against the dialogue floor fails it for being
+  // correctly paced.
+  const target = targetTurnCount(ctx.minutes, episodeFormat(ctx.episode));
   const actual = ctx.episode.turns.length;
   return actual >= target
     ? ok(id, label, "warning")
@@ -139,16 +202,21 @@ export function checkNoHonorifics(ctx: CheckContext): CheckResult {
   const id = "honorifics";
   const label = "No fabricated credentials for the speakers";
   const text = dialogueText(ctx);
-  const hits = [
-    ...text.matchAll(/\b(Dr\.|Prof\.|Professor|PhD|Ph\.D\.)\s*[A-Z]?/g),
-  ].map((m) => m[0].trim());
+  const hits = [...text.matchAll(/\b(Dr\.|Prof\.|Professor|PhD|Ph\.D\.)\s*[A-Z]?/g)].map(
+    (m) => m[0].trim(),
+  );
   // An honorific attached to a name from the paper (a cited author) is fine;
   // one introducing a speaker is not. Flag any that the paper does not contain.
   const paper = paperToText(ctx.paper).toLowerCase();
   const invented = hits.filter((h) => !paper.includes(h.toLowerCase()));
   return invented.length === 0
     ? ok(id, label, "error")
-    : fail(id, label, "error", `Honorifics absent from the paper: ${invented.join(", ")}.`);
+    : fail(
+        id,
+        label,
+        "error",
+        `Honorifics absent from the paper: ${invented.join(", ")}.`,
+      );
 }
 
 export function checkNoClaimedExpertise(ctx: CheckContext): CheckResult {
@@ -187,8 +255,7 @@ export function checkNoDirectAddress(ctx: CheckContext): CheckResult {
   const label = "Speakers are never named";
   const text = dialogueText(ctx);
   // A comma-delimited vocative: "Thanks, Sam" / "So, Alex, ...".
-  const leadIn =
-    /\b(?:thanks|thank you|so|well|right|okay|ok|yes|and|but|now)\s*,\s*/gi;
+  const leadIn = /\b(?:thanks|thank you|so|well|right|okay|ok|yes|and|but|now)\s*,\s*/gi;
   const words = paperWords(ctx);
   const hits = namesAfter(text, leadIn, 0).filter(
     (name) => !words.has(name.toLowerCase()),
@@ -278,16 +345,39 @@ export function checkNumbers(ctx: CheckContext): CheckResult {
 
   return unknown.size === 0
     ? ok(id, label, "warning")
-    : fail(id, label, "warning", `Not found in the paper: ${[...unknown].slice(0, 10).join(", ")}.`);
+    : fail(
+        id,
+        label,
+        "warning",
+        `Not found in the paper: ${[...unknown].slice(0, 10).join(", ")}.`,
+      );
 }
 
 /** Words that are capitalized mid-sentence without being paper-specific. */
 const PROPER_NOUN_ALLOWLIST = new Set([
   "i",
-  "monday","tuesday","wednesday","thursday","friday","saturday","sunday",
-  "january","february","march","april","may","june","july","august",
-  "september","october","november","december",
-  "english","internet","web",
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday",
+  "january",
+  "february",
+  "march",
+  "april",
+  "may",
+  "june",
+  "july",
+  "august",
+  "september",
+  "october",
+  "november",
+  "december",
+  "english",
+  "internet",
+  "web",
 ]);
 
 /* ── runner ────────────────────────────────────────────────────────────── */
@@ -313,8 +403,6 @@ export function runDeterministicChecks(ctx: CheckContext): DeterministicReport {
     checks,
     errors: failed.filter((c) => c.severity === "error").length,
     warnings: failed.filter((c) => c.severity === "warning").length,
-    complianceScore: checks.length
-      ? (checks.length - failed.length) / checks.length
-      : 1,
+    complianceScore: checks.length ? (checks.length - failed.length) / checks.length : 1,
   };
 }
