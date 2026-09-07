@@ -18,7 +18,8 @@ const MAX_PDF_BYTES = 25 * 1024 * 1024;
 
 export async function GET() {
   // Results carry a whole episode; the list only needs the state.
-  return NextResponse.json(store.list().map(({ result: _r, ...rest }) => rest));
+  const jobs = await store.list();
+  return NextResponse.json(jobs.map(({ result: _r, ...rest }) => rest));
 }
 
 export async function POST(req: Request) {
@@ -58,7 +59,7 @@ export async function POST(req: Request) {
     }
   }
 
-  const job = store.create({ minutes, provider, verify, revise });
+  const job = await store.create({ minutes, provider, verify, revise });
   await mkdir(AUDIO_DIR, { recursive: true });
 
   // Deliberately not awaited: the response returns an id immediately and the
@@ -106,7 +107,10 @@ async function uploadedPaper(form: FormData): Promise<PaperInput> {
 async function demoPaper(form: FormData): Promise<PaperInput> {
   const id = form.get("paper");
   if (typeof id !== "string") {
-    return { error: "This deployment runs its own papers. Pick one from the list.", status: 400 };
+    return {
+      error: "This deployment runs its own papers. Pick one from the list.",
+      status: 400,
+    };
   }
 
   // Checked against the catalogue rather than trusted as a filename, so the id
@@ -120,5 +124,9 @@ async function demoPaper(form: FormData): Promise<PaperInput> {
   // The catalogue's title is authoritative for these three, which spares the
   // demo a paper introduced by whatever text happens to sit at the top of
   // page one.
-  return { pdf: await readFile(paperPath(paper.id)), paperId: paper.id, paperTitle: paper.title };
+  return {
+    pdf: await readFile(paperPath(paper.id)),
+    paperId: paper.id,
+    paperTitle: paper.title,
+  };
 }

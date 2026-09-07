@@ -1,5 +1,6 @@
 import type { Episode } from "../llm/schema";
 import type { TurnTiming } from "../tts/types";
+import type { TurnCitation } from "../ground/index";
 
 /**
  * Stages a job moves through, in order. Generation and synthesis each take tens
@@ -96,6 +97,14 @@ export interface JobResult {
    * than letting the absence of a review look like a clean bill of health.
    */
   reviewError?: JobError;
+  /**
+   * Where each turn came from in the paper, when it could be placed.
+   *
+   * Computed by lexical matching on every run — no model call, no API key, and
+   * nothing to do with the eval harness. Turns that cannot be placed
+   * confidently are absent rather than pointed at the wrong page.
+   */
+  citations?: TurnCitation[];
   audioPath?: string;
   timings?: TurnTiming[];
   totalMs?: number;
@@ -110,6 +119,22 @@ export interface JobError {
   message: string;
   /** What to do about it, when there is something to do. */
   remedy?: string;
+  /**
+   * The stage the job was in when it failed.
+   *
+   * Terminal state overwrites `stage` with "error", so without this the one
+   * fact a person always wants — where did it break — is the one fact the
+   * failure does not carry.
+   */
+  failedStage?: JobStage;
+  /**
+   * Short reference printed in the server log beside the full error.
+   *
+   * The detail cannot travel to a browser, but "something went wrong" with no
+   * way to find the real cause is not a diagnosis either. This is the handle
+   * that connects the two without leaking anything.
+   */
+  ref?: string;
 }
 
 export interface Job {

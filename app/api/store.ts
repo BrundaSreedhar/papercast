@@ -1,4 +1,4 @@
-import { JobStore } from "@/lib/jobs/store";
+import { MemoryJobStore, type JobStore } from "@/lib/jobs/store";
 
 /**
  * One store for the whole server process.
@@ -12,6 +12,6 @@ import { JobStore } from "@/lib/jobs/store";
  */
 const globalForStore = globalThis as unknown as { papercastStore?: JobStore };
 
-export const store = globalForStore.papercastStore ?? new JobStore();
+export const store: JobStore = globalForStore.papercastStore ?? new MemoryJobStore();
 // Survive the module reloads that happen during development.
 globalForStore.papercastStore = store;

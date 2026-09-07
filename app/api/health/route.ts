@@ -17,7 +17,7 @@ export async function GET() {
   return NextResponse.json({
     ok: true,
     demo: demo.enabled,
-    jobs: store.list().length,
+    jobs: (await store.list()).length,
     ...(demo.enabled ? { gate: gate.status() } : {}),
   });
 }
