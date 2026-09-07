@@ -2,8 +2,26 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-export interface Turn { speaker: "host" | "guest"; text: string }
-export interface Timing { turnIndex: number; startMs: number; endMs: number }
+export interface Turn {
+  speaker: "host" | "guest" | "narrator";
+  text: string;
+}
+export interface Timing {
+  turnIndex: number;
+  startMs: number;
+  endMs: number;
+}
+
+/** Where a turn came from in the paper. Absent when it could not be placed. */
+export interface Citation {
+  turnIndex: number;
+  page: number;
+  pageEnd?: number;
+  heading: string;
+  text: string;
+  match: "exact" | "approximate";
+  score: number;
+}
 
 /**
  * Audio with a transcript that follows it.
@@ -17,14 +35,22 @@ export function TranscriptPlayer({
   audioUrl,
   turns,
   timings,
+  citations = [],
 }: {
   audioUrl: string;
   turns: Turn[];
   timings: Timing[];
+  citations?: Citation[];
 }) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [currentMs, setCurrentMs] = useState(0);
   const [follow, setFollow] = useState(true);
+
+  const citationFor = useMemo(() => {
+    const m = new Map<number, Citation>();
+    for (const c of citations) m.set(c.turnIndex, c);
+    return m;
+  }, [citations]);
 
   // Sorted once so the lookup below can stop at the first match.
   const ordered = useMemo(
@@ -107,6 +133,25 @@ export function TranscriptPlayer({
             >
               <span className="who">{turn.speaker}</span>
               <p>{turn.text}</p>
+              {(() => {
+                const c = citationFor.get(i);
+                if (!c) return null;
+                const pages =
+                  c.pageEnd && c.pageEnd !== c.page
+                    ? `pp. ${c.page}–${c.pageEnd}`
+                    : `p. ${c.page}`;
+                return (
+                  <p
+                    className="cite"
+                    // The passage itself, so a reader can check the reference
+                    // without leaving the page.
+                    title={c.text}
+                  >
+                    {c.heading} · {pages}
+                    {c.match === "approximate" && <span className="cite-approx"> ≈</span>}
+                  </p>
+                );
+              })()}
             </div>
           );
         })}

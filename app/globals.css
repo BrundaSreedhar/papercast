@@ -34,17 +34,27 @@
   }
 }
 
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
 
 body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
-  font: 16px/1.65 ui-serif, Georgia, "Times New Roman", serif;
+  font:
+    16px/1.65 ui-serif,
+    Georgia,
+    "Times New Roman",
+    serif;
   -webkit-font-smoothing: antialiased;
 }
 
-.wrap { max-width: 46rem; margin: 0 auto; padding: 3rem 1.25rem 6rem; }
+.wrap {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 3rem 1.25rem 6rem;
+}
 
 h1 {
   font-size: 1.6rem;
@@ -52,7 +62,11 @@ h1 {
   margin: 0 0 0.25rem;
 }
 
-.sub { color: var(--muted); margin: 0 0 2rem; font-size: 0.95rem; }
+.sub {
+  color: var(--muted);
+  margin: 0 0 2rem;
+  font-size: 0.95rem;
+}
 
 .card {
   background: var(--surface);
@@ -68,12 +82,24 @@ h1 {
   padding: 2.5rem 1.25rem;
   text-align: center;
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
   background: var(--surface);
 }
-.drop:hover, .drop.over { border-color: var(--accent); background: var(--active-bg); }
-.drop strong { display: block; margin-bottom: 0.35rem; }
-.drop span { color: var(--muted); font-size: 0.9rem; }
+.drop:hover,
+.drop.over {
+  border-color: var(--accent);
+  background: var(--active-bg);
+}
+.drop strong {
+  display: block;
+  margin-bottom: 0.35rem;
+}
+.drop span {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
 
 .controls {
   display: flex;
@@ -84,8 +110,14 @@ h1 {
   font-size: 0.9rem;
   font-family: ui-sans-serif, system-ui, sans-serif;
 }
-.controls label { display: flex; gap: 0.4rem; align-items: center; color: var(--muted); }
-select, input[type="number"] {
+.controls label {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  color: var(--muted);
+}
+select,
+input[type="number"] {
   font: inherit;
   padding: 0.3rem 0.45rem;
   border: 1px solid var(--line);
@@ -104,29 +136,75 @@ button {
   padding: 0.55rem 1.1rem;
   cursor: pointer;
 }
-button:disabled { opacity: 0.5; cursor: default; }
-button.ghost { background: transparent; color: var(--accent); border: 1px solid var(--line); }
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+button.ghost {
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--line);
+}
 
 /* ---- progress ---- */
-.stages { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 1rem; }
+.stages {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
 .stage {
-  display: flex; align-items: center; gap: 0.6rem;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
   font-family: ui-sans-serif, system-ui, sans-serif;
-  font-size: 0.88rem; color: var(--faint);
+  font-size: 0.88rem;
+  color: var(--faint);
 }
-.stage.active { color: var(--ink); }
-.stage.complete { color: var(--muted); }
+.stage.active {
+  color: var(--ink);
+}
+.stage.complete {
+  color: var(--muted);
+}
 .dot {
-  width: 0.5rem; height: 0.5rem; border-radius: 50%;
-  background: var(--line); flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--line);
+  flex: none;
 }
-.stage.active .dot { background: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
-.stage.complete .dot { background: var(--accent); }
-@keyframes pulse { 50% { opacity: 0.35; } }
-@media (prefers-reduced-motion: reduce) { .stage.active .dot { animation: none; } }
+.stage.active .dot {
+  background: var(--accent);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+.stage.complete .dot {
+  background: var(--accent);
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .stage.active .dot {
+    animation: none;
+  }
+}
 
-.bar { height: 3px; background: var(--line); border-radius: 2px; overflow: hidden; margin-top: 1rem; }
-.bar > i { display: block; height: 100%; background: var(--accent); transition: width 0.4s ease; }
+.bar {
+  height: 3px;
+  background: var(--line);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 1rem;
+}
+.bar > i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.4s ease;
+}
 
 /* ---- transcript ---- */
 .turn {
@@ -139,9 +217,15 @@ button.ghost { background: transparent; color: var(--accent); border: 1px solid 
   transition: background 0.2s;
   scroll-margin-top: 6rem;
 }
-.turn:hover { background: var(--active-bg); }
-.turn.active { background: var(--active-bg); }
-.turn.active .who::after { content: " ▸"; }
+.turn:hover {
+  background: var(--active-bg);
+}
+.turn.active {
+  background: var(--active-bg);
+}
+.turn.active .who::after {
+  content: " ▸";
+}
 .who {
   font-family: ui-sans-serif, system-ui, sans-serif;
   font-size: 0.7rem;
@@ -150,26 +234,68 @@ button.ghost { background: transparent; color: var(--accent); border: 1px solid 
   padding-top: 0.28rem;
   color: var(--host);
 }
-.turn[data-speaker="guest"] .who { color: var(--guest); }
-.turn p { margin: 0; }
-.turn.past p { color: var(--muted); }
+.turn[data-speaker="guest"] .who {
+  color: var(--guest);
+}
+.turn[data-speaker="narrator"] .who {
+  color: var(--host);
+}
+.turn p {
+  margin: 0;
+}
+.turn.past p {
+  color: var(--muted);
+}
+
+/*
+ * The reference sits under the turn it belongs to, in the text column rather
+ * than beside the speaker label. Quiet by default: it is there to be checked
+ * when a listener wonders where a claim came from, not to compete with the
+ * words being spoken.
+ */
+.turn .cite {
+  grid-column: 2;
+  margin-top: 0.3rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  cursor: help;
+}
+.turn.active .cite {
+  color: var(--host);
+}
+/* Marks a reference found by paraphrase rather than wording, so a reader can
+   weigh it accordingly instead of assuming every one is verbatim. */
+.cite-approx {
+  opacity: 0.7;
+}
 
 .player {
-  position: sticky; top: 0; z-index: 2;
+  position: sticky;
+  top: 0;
+  z-index: 2;
   background: var(--bg);
   padding: 1rem 0;
   border-bottom: 1px solid var(--line);
   margin-bottom: 0.5rem;
 }
-audio { width: 100%; }
+audio {
+  width: 100%;
+}
 
 .meta {
-  display: flex; gap: 1.25rem; flex-wrap: wrap;
+  display: flex;
+  gap: 1.25rem;
+  flex-wrap: wrap;
   font-family: ui-sans-serif, system-ui, sans-serif;
-  font-size: 0.8rem; color: var(--muted);
+  font-size: 0.8rem;
+  color: var(--muted);
   margin-top: 0.6rem;
 }
-.meta b { color: var(--ink); font-weight: 600; }
+.meta b {
+  color: var(--ink);
+  font-weight: 600;
+}
 
 .err {
   border-left: 3px solid var(--error);
@@ -179,10 +305,17 @@ audio { width: 100%; }
   font-family: ui-sans-serif, system-ui, sans-serif;
   font-size: 0.9rem;
 }
-.err strong { color: var(--error); display: block; margin-bottom: 0.25rem; }
+.err strong {
+  color: var(--error);
+  display: block;
+  margin-bottom: 0.25rem;
+}
 
 /* ---- the demo shelf ---- */
-.papers { display: grid; gap: 0.6rem; }
+.papers {
+  display: grid;
+  gap: 0.6rem;
+}
 .paper {
   display: block;
   width: 100%;
@@ -193,18 +326,33 @@ audio { width: 100%; }
   border-radius: var(--radius);
   padding: 0.9rem 1rem;
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
 }
-.paper:hover { border-color: var(--accent); background: var(--active-bg); }
-.paper.chosen { border-color: var(--accent); background: var(--active-bg); }
-.paper strong { display: block; font-weight: 600; margin-bottom: 0.2rem; }
+.paper:hover {
+  border-color: var(--accent);
+  background: var(--active-bg);
+}
+.paper.chosen {
+  border-color: var(--accent);
+  background: var(--active-bg);
+}
+.paper strong {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 0.2rem;
+}
 .paper span {
   display: block;
   color: var(--muted);
   font-family: ui-sans-serif, system-ui, sans-serif;
   font-size: 0.82rem;
 }
-.paper .who-wrote { color: var(--faint); margin-bottom: 0.25rem; }
+.paper .who-wrote {
+  color: var(--faint);
+  margin-bottom: 0.25rem;
+}
 
 .note {
   color: var(--muted);

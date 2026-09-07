@@ -15,6 +15,7 @@ import { getProvider } from "../lib/llm/index";
 import { activeProvider, type ProviderName } from "../lib/config/env";
 import { enrichWithFigures, getVisionProvider } from "../lib/vision/index";
 import { refineEpisode } from "../lib/refine/index";
+import { groundTurns, formatCitation } from "../lib/ground/index";
 import { runEntry } from "./entry";
 import { withSpan } from "../lib/trace/index";
 import * as TA from "../lib/trace/attributes";
@@ -27,6 +28,10 @@ interface Args {
   /** Fact-check the script against the paper and rewrite what fails. */
   revise: boolean;
   reviseRounds: number;
+  /** One voice talking to the listener, instead of a two-host conversation. */
+  solo: boolean;
+  /** One voice, explaining the paper to a young child. */
+  eli5: boolean;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -34,8 +39,8 @@ function parseArgs(argv: string[]): Args {
   const pdfPath = rest.find((a) => !a.startsWith("--"));
   if (!pdfPath) {
     console.error(
-      "Usage: npm run generate -- <paper.pdf> [--minutes N] [--provider anthropic|openai|open]\n" +
-        "                          [--out file.json] [--figures] [--revise] [--revise-rounds N]\n" +
+      "Usage: npm run generate -- <paper.pdf> [--minutes N] [--provider anthropic|openai|gemini|open]\n" +
+        "                          [--out file.json] [--figures] [--solo] [--eli5] [--revise] [--revise-rounds N]\n" +
         "                          [--trace] [--trace-payloads]",
     );
     process.exit(1);
@@ -51,6 +56,8 @@ function parseArgs(argv: string[]): Args {
     provider: providerArg as ProviderName | undefined,
     out: get("--out") ?? `${basename(pdfPath).replace(/\.pdf$/i, "")}.episode.json`,
     revise: rest.includes("--revise"),
+    solo: rest.includes("--solo"),
+    eli5: rest.includes("--eli5"),
     reviseRounds: Number(get("--revise-rounds") ?? 1),
   };
 }
@@ -91,15 +98,19 @@ async function generate(args: Args) {
     process.stdout.write("🖼️   Reading figures…");
     paper = await enrichWithFigures(paper, bytes, {
       provider: getVisionProvider(),
-      onProgress: (d, t) => process.stdout.write(`\r🖼️   Reading figures… ${d}/${t} pages`),
+      onProgress: (d, t) =>
+        process.stdout.write(`\r🖼️   Reading figures… ${d}/${t} pages`),
     });
     console.log(`\r🖼️   Described ${paper.figures?.length ?? 0} pages of figures      `);
   }
 
-  console.log(`\n🎙️   Generating ${args.minutes}-min episode via "${provider}"…`);
+  console.log(
+    `\n🎙️   Generating ${args.minutes}-min ${args.eli5 ? "explain-like-I'm-5" : args.solo ? "solo" : "two-host"} episode via "${provider}"…`,
+  );
   const t0 = Date.now();
   const result = await generateEpisode(paper, {
     minutes: args.minutes,
+    format: args.eli5 ? "eli5" : args.solo ? "solo" : "dialogue",
     provider: getProvider(provider),
   });
   const secs = ((Date.now() - t0) / 1000).toFixed(1);
@@ -121,7 +132,8 @@ async function generate(args: Args) {
       review = await refineEpisode(episode, paper, {
         provider: getProvider(provider),
         maxRounds: args.reviseRounds,
-        onProgress: (round, of, message) => console.log(`    [${round}/${of}] ${message}`),
+        onProgress: (round, of, message) =>
+          console.log(`    [${round}/${of}] ${message}`),
       });
     } catch (err) {
       // The script is already written and paid for. Report the failed check and
@@ -161,11 +173,28 @@ async function generate(args: Args) {
   console.log(episode.summary);
   console.log(`\n── KEY POINTS ──────────────────────────────────────────`);
   episode.keyPoints.forEach((k, i) => console.log(`  ${i + 1}. ${k}`));
-  console.log(`\n── DIALOGUE (first 4 turns) ────────────────────────────`);
-  episode.turns.slice(0, 4).forEach((t) => console.log(`  ${t.speaker.toUpperCase()}: ${t.text}`));
-  console.log(`  … (${episode.turns.length} turns total)`);
+  // Anchoring is local and deterministic, so it runs here too rather than only
+  // in the web app: the CLI is where the script is actually read closely.
+  const citations = groundTurns(episode, paper);
+  const citeFor = new Map(citations.map((c) => [c.turnIndex, c]));
 
-  await writeFile(args.out, JSON.stringify({ ...result, episode, review }, null, 2), "utf8");
+  console.log(`\n── DIALOGUE (first 4 turns) ────────────────────────────`);
+  episode.turns.slice(0, 4).forEach((t, i) => {
+    console.log(`  ${t.speaker.toUpperCase()}: ${t.text}`);
+    const c = citeFor.get(i);
+    if (c)
+      console.log(`     ↳ ${formatCitation(c)}${c.match === "approximate" ? " ≈" : ""}`);
+  });
+  console.log(`  … (${episode.turns.length} turns total)`);
+  console.log(
+    `\n📍  ${citations.length} of ${episode.turns.length} turns traced back to the paper`,
+  );
+
+  await writeFile(
+    args.out,
+    JSON.stringify({ ...result, episode, review, citations }, null, 2),
+    "utf8",
+  );
   console.log(`\n💾  Full episode written to ${args.out}\n`);
 }
 
