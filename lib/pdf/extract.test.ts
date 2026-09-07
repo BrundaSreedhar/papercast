@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parsePaperStructure, paperToText } from "./extract";
+import { pageAt, parsePaperStructure, paperToText, type PaperSource } from "./extract";
 
 // A realistic flattened-PDF fixture: title, authors, abstract, numbered
 // sections, figure/table noise, references, acknowledgments, appendix.
@@ -134,5 +134,90 @@ describe("parsePaperStructure fallback", () => {
     const joined = paperToText(paper).toLowerCase();
     expect(joined).toContain("blob of body text");
     expect(joined).not.toContain("citation that should be dropped");
+  });
+});
+
+describe("line provenance", () => {
+  const DOC = [
+    "A Paper About Things",
+    "",
+    "Abstract",
+    "We describe a system.",
+    "",
+    "1 Introduction",
+    "The network is the bottleneck.",
+    "Figure 1: an architecture diagram",
+    "7",
+    "Segments are 10GB in size.",
+  ].join("\n");
+
+  it("records an offset that actually indexes the source text", () => {
+    const paper = parsePaperStructure(DOC);
+    const all = [
+      ...(paper.abstractLines ?? []),
+      ...paper.sections.flatMap((s) => s.lines ?? []),
+    ];
+    expect(all.length).toBeGreaterThan(0);
+    for (const line of all) {
+      expect(DOC.slice(line.at, line.at + line.text.length)).toBe(line.text);
+    }
+  });
+
+  it("rebuilds content exactly from the lines it kept", () => {
+    // If these ever disagree, a citation would point at text the model never
+    // saw, which is worse than having no citation.
+    for (const s of parsePaperStructure(DOC).sections) {
+      expect((s.lines ?? []).map((l) => l.text).join("\n")).toBe(s.content);
+    }
+  });
+
+  it("keeps offsets correct across the lines it drops", () => {
+    const intro = parsePaperStructure(DOC).sections.find((s) =>
+      /introduction/i.test(s.heading),
+    );
+    const last = intro!.lines!.at(-1)!;
+    // The caption and the stray page number between the two sentences are gone,
+    // so this line's offset must jump over them rather than shift by their size.
+    expect(last.text).toBe("Segments are 10GB in size.");
+    expect(DOC.slice(last.at, last.at + last.text.length)).toBe(last.text);
+    expect(intro!.content).not.toContain("Figure 1");
+  });
+});
+
+describe("pageAt", () => {
+  const source: PaperSource = {
+    text: "page one text\n\npage two text",
+    pages: [
+      { page: 1, start: 0, end: 15 },
+      { page: 2, start: 15, end: 28 },
+    ],
+  };
+
+  it("resolves an offset to the page it was printed on", () => {
+    expect(pageAt(source, 0)).toBe(1);
+    expect(pageAt(source, 14)).toBe(1);
+    expect(pageAt(source, 15)).toBe(2);
+  });
+
+  it("returns undefined past the end rather than guessing the last page", () => {
+    expect(pageAt(source, 999)).toBeUndefined();
+  });
+});
+
+describe("the no-headings fallback", () => {
+  it("keeps the body without leaking the title into it", () => {
+    // Regression: the fallback sliced the text by a line index as though it
+    // were a character offset, which chopped three characters off the front and
+    // left the title sitting inside the body.
+    const doc = [
+      "Some Title That Is Long Enough",
+      "",
+      "The first real sentence of the body goes here and runs on.",
+      "A second sentence of body text follows it.",
+    ].join("\n");
+    const paper = parsePaperStructure(doc);
+    const body = paper.sections.map((s) => s.content).join("\n");
+    expect(body).toContain("The first real sentence");
+    expect(body).not.toContain("Some Title That Is Long Enough");
   });
 });
