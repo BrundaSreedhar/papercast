@@ -712,8 +712,8 @@ audio {
 
 /* Destructive, so it sits quietly until it is wanted and turns red only once
    it is armed and the next click really does remove something. */
+/* Sits in the crumb row now, so it no longer floats over what follows it. */
 .delete {
-  float: right;
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
@@ -787,4 +787,111 @@ audio {
   margin-top: 0.35rem;
   font-size: 0.88rem;
   color: var(--muted);
+}
+
+/* ── crumbs ──────────────────────────────────────────────────────────── */
+
+/* The back link and the destructive action share a row, so the eye finds both
+   in one place instead of one floating over the other. */
+.crumbs {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.7rem 0.3rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  text-decoration: none;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.82rem;
+  transition:
+    color 0.15s,
+    border-color 0.15s;
+}
+.back:hover {
+  color: var(--ink);
+  border-color: var(--accent);
+}
+.back svg {
+  transition: transform 0.15s;
+}
+.back:hover svg {
+  transform: translateX(-2px);
+}
+.back:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ── the collapsed summary ───────────────────────────────────────────── */
+
+.summary {
+  padding: 0;
+}
+.summary > summary {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.summary > summary::-webkit-details-marker {
+  display: none;
+}
+.summary > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: var(--radius);
+}
+.summary-label {
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.75rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.summary-hint {
+  font-size: 0.8rem;
+  color: var(--faint);
+  margin-right: auto;
+}
+/* The chevron is the affordance, so it turns rather than swapping glyph. */
+.summary > summary::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-right: 1.6px solid var(--faint);
+  border-bottom: 1.6px solid var(--faint);
+  transform: rotate(45deg) translate(-2px, -2px);
+  transition: transform 0.2s;
+}
+.summary[open] > summary::after {
+  transform: rotate(-135deg) translate(-2px, -2px);
+}
+.summary[open] > summary {
+  border-bottom: 1px solid var(--line);
+}
+.summary > p {
+  margin: 0;
+  padding: 0.9rem 1rem 0;
+}
+.summary .key-points {
+  padding: 0.2rem 1rem 1rem 2.1rem;
+  margin: 0.6rem 0 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .back svg,
+  .summary > summary::after {
+    transition: none;
+  }
 }

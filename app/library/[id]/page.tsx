@@ -22,10 +22,22 @@ export default async function Episode({ params }: { params: Promise<{ id: string
 
   return (
     <main className="wrap">
-      <p className="sub">
-        <Link href="/library">← All episodes</Link>
+      <div className="crumbs">
+        <Link href="/library" className="back">
+          <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+            <path
+              d="M10 3 L5 8 L10 13"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+          All episodes
+        </Link>
         <DeleteEpisode episodeId={record.id} title={record.paperTitle} />
-      </p>
+      </div>
       <h1>{record.paperTitle}</h1>
       <p className="sub">
         {record.turnCount} turns · {record.model ?? "unknown model"}
@@ -35,8 +47,20 @@ export default async function Episode({ params }: { params: Promise<{ id: string
       </p>
 
       {record.summary && (
-        <section className="card summary">
-          <h2>What this episode covers</h2>
+        /*
+         * Closed by default, and a plain <details> rather than a component with
+         * state: it needs no JavaScript, it is keyboard operable for free, and
+         * this page is rendered on the server. The trigger says how much is
+         * behind it so opening it is a decision rather than a surprise.
+         */
+        <details className="card summary">
+          <summary>
+            <span className="summary-label">What this episode covers</span>
+            <span className="summary-hint">
+              {record.summary.split(/\s+/).length} words
+              {record.keyPoints?.length ? ` · ${record.keyPoints.length} key points` : ""}
+            </span>
+          </summary>
           <p>{record.summary}</p>
           {record.keyPoints?.length > 0 && (
             <ul className="key-points">
@@ -45,7 +69,7 @@ export default async function Episode({ params }: { params: Promise<{ id: string
               ))}
             </ul>
           )}
-        </section>
+        </details>
       )}
 
       {record.hasAudio ? (
