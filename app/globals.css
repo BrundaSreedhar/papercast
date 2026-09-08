@@ -698,3 +698,49 @@ audio {
   color: var(--ink);
   margin-bottom: 0.25rem;
 }
+
+/* A background answer is useful and is not from the paper, and a reader has to
+   be able to tell at a glance which of the two they are reading. */
+.kind {
+  margin: 0 0 0.35rem;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--guest);
+}
+
+/* Destructive, so it sits quietly until it is wanted and turns red only once
+   it is armed and the next click really does remove something. */
+.delete {
+  float: right;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.delete-btn {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--faint);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.delete-btn:hover {
+  color: var(--ink);
+}
+.delete-btn.confirm {
+  color: var(--error);
+  font-weight: 600;
+}
+.delete-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.delete-error {
+  font-size: 0.8rem;
+  color: var(--error);
+}

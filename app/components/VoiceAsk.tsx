@@ -14,7 +14,7 @@ interface Citation {
 interface Reply {
   question: string;
   answer: string;
-  answered: boolean;
+  kind: "from-paper" | "background" | "not-addressed";
   grounded: boolean;
   citations: Citation[];
   audioUrl?: string;
@@ -165,6 +165,9 @@ export function VoiceAsk({
       {reply && (
         <div className="voice-reply">
           <p className="q">“{reply.question}”</p>
+          {reply.kind === "background" && (
+            <p className="kind background">General background — not from this paper</p>
+          )}
           <p className="a">{reply.answer}</p>
           {reply.citations.length > 0 ? (
             <p className="sources">
@@ -178,7 +181,7 @@ export function VoiceAsk({
               ))}
             </p>
           ) : (
-            reply.answered && (
+            reply.kind === "from-paper" && (
               <p className="sources unsupported">
                 Nothing in the paper was found to support this. Treat it with suspicion.
               </p>

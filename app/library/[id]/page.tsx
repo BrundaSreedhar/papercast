@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getEpisode } from "@/lib/library/store";
 import { TranscriptPlayer } from "@/app/components/TranscriptPlayer";
 import { PaperChat } from "@/app/components/PaperChat";
+import { DeleteEpisode } from "@/app/components/DeleteEpisode";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,6 +24,7 @@ export default async function Episode({ params }: { params: Promise<{ id: string
     <main className="wrap">
       <p className="sub">
         <Link href="/library">← All episodes</Link>
+        <DeleteEpisode episodeId={record.id} title={record.paperTitle} />
       </p>
       <h1>{record.paperTitle}</h1>
       <p className="sub">

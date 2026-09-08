@@ -21,7 +21,26 @@ import type { LLMProvider, Usage } from "../llm/types";
 import { paperToText, type PaperStructure } from "../pdf/extract";
 import { PaperLocator, type Citation } from "../pdf/locate";
 
+/**
+ * What kind of answer this is.
+ *
+ * The distinction is the feature. "What does this paper claim about X" and
+ * "what is an RNN" are both fair questions from someone trying to understand a
+ * paper, but only the first can be answered from it. Refusing the second is
+ * pedantry — the paper talks about recurrent networks and never defines them,
+ * and a reader who does not know what one is cannot follow the argument.
+ *
+ * Letting background in unlabelled would be worse than refusing, though, since
+ * the whole point of this project is that you can tell what came from the paper.
+ * So the model must say which it is doing, and the interface shows it.
+ */
+export const AnswerKindSchema = z.enum(["from-paper", "background", "not-addressed"]);
+export type AnswerKind = z.infer<typeof AnswerKindSchema>;
+
 export const PaperAnswerSchema = z.object({
+  kind: AnswerKindSchema.describe(
+    '"from-paper" when the paper itself answers the question. "background" when the question is about a concept, method or term the paper refers to but does not explain, and you are answering from general knowledge to help the reader follow it. "not-addressed" when the paper does not address it and it is not background needed to understand the paper.',
+  ),
   answer: z
     .string()
     .describe(
@@ -30,12 +49,7 @@ export const PaperAnswerSchema = z.object({
   quotes: z
     .array(z.string())
     .describe(
-      "Passages copied VERBATIM from the paper that support the answer, longest first, at most three. Copy the wording exactly — do not paraphrase, summarize, or join separate sentences. Empty when the paper does not address the question.",
-    ),
-  answered: z
-    .boolean()
-    .describe(
-      "False when the paper does not address the question, whatever else you say.",
+      'Passages copied VERBATIM from the paper that support the answer, longest first, at most three. Copy the wording exactly — do not paraphrase, summarize, or join separate sentences. Empty unless kind is "from-paper".',
     ),
 });
 
@@ -49,34 +63,41 @@ export interface ChatTurn {
 
 export interface PaperReply {
   answer: string;
-  /** Where each supporting passage sits in the paper. */
+  /** Which of the three kinds of answer this is. */
+  kind: AnswerKind;
+  /** Where each supporting passage sits in the paper. Empty for background. */
   citations: Citation[];
-  /** False when the paper does not address the question. */
-  answered: boolean;
   /**
    * True when the answer claims the paper says something *and* at least one
    * supporting passage was found in it.
    *
    * The gap this closes is not theoretical. Asked about a learning rate, a
-   * small model answered "the paper does not specify the learning rate, but it
-   * states the model was trained using a neural network architecture" — about
-   * a paper on database storage — and set `answered` to true. Every quote it
-   * offered failed to resolve, so no citation was shown, but the prose still
-   * read as authoritative. An answer asserting something about the paper with
-   * nothing found to support it is exactly the failure this project exists to
-   * catch, and the caller has to be able to see it without reading closely.
+   * small model answered that the paper "states the model was trained using a
+   * neural network architecture" — about a paper on database storage — and
+   * claimed to have answered from it. Every quote it offered failed to resolve,
+   * so no citation appeared, but the prose still read as authoritative. Only a
+   * "from-paper" answer with a located passage counts.
+   *
+   * Background is never grounded and is not meant to be: it is labelled as not
+   * coming from the paper, which is a different promise, not a weaker one.
    */
   grounded: boolean;
   usage: Usage;
 }
 
-const SYSTEM = `You answer questions about one academic paper, for a reader who has just listened to an episode about it.
+const SYSTEM = `You answer questions about one academic paper, for a reader who has just listened to an episode about it and is trying to understand it.
 
 ${FAITHFULNESS}
 
+WHICH KIND OF ANSWER THIS IS — decide first, then answer:
+- "from-paper": the paper itself answers the question. Everything you say must come from it, and you must quote the passages you relied on.
+- "background": the question is about a concept, method, dataset or term that the paper refers to but does not explain — recurrent networks in a paper that replaces them, a metric it reports without defining. Answer from general knowledge, because a reader who does not know it cannot follow the paper. Say nothing about what this paper does with it beyond what the paper states, keep it to the general idea, and leave "quotes" empty.
+- "not-addressed": the paper does not address it and it is not background needed to follow the paper. Say plainly that the paper does not cover it and stop. Do not offer what the answer probably is.
+
+Never blur the first two. Explaining a general idea is helpful; attributing it to this paper when the paper did not say it is the failure this whole project exists to prevent. If a question has both parts — "what is an RNN and why did they drop it" — answer the paper's part as "from-paper" with quotes, and keep the general explanation to a sentence inside it.
+
 ANSWERING:
-- The paper is the only authority. Your own knowledge of the field is irrelevant and must not appear in the answer, however confident you are and however well known the fact.
-- If the paper does not address the question, say plainly that it does not, set "answered" to false, and stop. Do not offer what the answer probably is. A reader who wanted a guess would not have asked about this paper.
+- For a "from-paper" answer the paper is the only authority, and your own knowledge of the field must not appear in it however confident you are.
 - Quote to support what you say. Copy the supporting passages VERBATIM into "quotes" — exact wording, no paraphrase, no stitching separate sentences together. They are looked up in the paper afterwards, and one that cannot be found is discarded.
 - Answer conversationally, as if speaking. No markdown, no headings, no bullet points.
 - Keep it to two to six sentences unless the question genuinely needs more.
@@ -111,12 +132,15 @@ export async function askPaper(
     temperature: 0.2,
   });
 
-  const citations = locate(paper, result.data.quotes);
+  const kind = result.data.kind;
+  // Quotes are only meaningful for a claim about the paper. A background answer
+  // that offered one would be citing the paper for something it never said.
+  const citations = kind === "from-paper" ? locate(paper, result.data.quotes) : [];
   return {
     answer: result.data.answer,
-    answered: result.data.answered,
+    kind,
     citations,
-    grounded: result.data.answered && citations.length > 0,
+    grounded: kind === "from-paper" && citations.length > 0,
     usage: result.usage,
   };
 }

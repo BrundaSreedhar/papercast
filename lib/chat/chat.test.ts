@@ -50,7 +50,7 @@ describe("askPaper", () => {
     const provider = new StubProvider({
       answer: "Six ways, across three zones.",
       quotes: ["Each segment is replicated six ways across three availability zones"],
-      answered: true,
+      kind: "from-paper" as const,
     });
     const reply = await askPaper(paper, "How many copies?", { provider });
     expect(reply.citations).toHaveLength(1);
@@ -66,7 +66,7 @@ describe("askPaper", () => {
       quotes: [
         "We train the model on ImageNet for eighty epochs with a batch size of 256",
       ],
-      answered: true,
+      kind: "from-paper" as const,
     });
     const reply = await askPaper(paper, "How was it trained?", { provider });
     expect(reply.citations).toEqual([]);
@@ -84,10 +84,10 @@ describe("askPaper", () => {
       answer:
         "The paper states the model was trained with a neural network architecture.",
       quotes: ["We trained the model with a neural network architecture"],
-      answered: true,
+      kind: "from-paper" as const,
     });
     const reply = await askPaper(paper, "What learning rate?", { provider });
-    expect(reply.answered).toBe(true);
+    expect(reply.kind).toBe("from-paper");
     expect(reply.citations).toEqual([]);
     expect(reply.grounded).toBe(false);
   });
@@ -96,7 +96,7 @@ describe("askPaper", () => {
     const provider = new StubProvider({
       answer: "Six ways.",
       quotes: ["Each segment is replicated six ways across three availability zones"],
-      answered: true,
+      kind: "from-paper" as const,
     });
     expect((await askPaper(paper, "How many?", { provider })).grounded).toBe(true);
   });
@@ -105,13 +105,32 @@ describe("askPaper", () => {
     const provider = new StubProvider({
       answer: "The paper does not discuss neural networks.",
       quotes: [],
-      answered: false,
+      kind: "not-addressed" as const,
     });
     const reply = await askPaper(paper, "What about neural networks?", { provider });
-    expect(reply.answered).toBe(false);
+    expect(reply.kind).toBe("not-addressed");
     expect(reply.citations).toEqual([]);
     // A refusal is not an ungrounded claim; it is the paper saying nothing.
     expect(reply.grounded).toBe(false);
+  });
+
+  it("answers a background question without pretending the paper said it", async () => {
+    // "What is an RNN" on a paper that replaces RNNs is a fair question from
+    // someone trying to follow the argument, and refusing it is pedantry. But
+    // the answer must be labelled, and must never carry a citation — quoting
+    // the paper for general knowledge is the failure being avoided.
+    const provider = new StubProvider({
+      kind: "background" as const,
+      answer:
+        "A recurrent network processes a sequence one step at a time, carrying state forward.",
+      quotes: ["Each segment is replicated six ways across three availability zones"],
+    });
+    const reply = await askPaper(paper, "What is an RNN?", { provider });
+    expect(reply.kind).toBe("background");
+    // A real quote, deliberately discarded: it supports nothing that was said.
+    expect(reply.citations).toEqual([]);
+    expect(reply.grounded).toBe(false);
+    expect(reply.answer).toContain("recurrent network");
   });
 
   it("does not offer the same passage twice", async () => {
@@ -121,7 +140,7 @@ describe("askPaper", () => {
         "Each segment is replicated six ways across three availability zones",
         "replicated six ways across three availability zones using a write quorum",
       ],
-      answered: true,
+      kind: "from-paper" as const,
     });
     const reply = await askPaper(paper, "How many copies?", { provider });
     // Two overlapping quotes resolve to one passage, and showing it twice would
@@ -153,7 +172,7 @@ describe("askPaper", () => {
     const provider = new StubProvider({
       answer: "Six ways.",
       quotes: ["Each segment is replicated six ways across three availability zones"],
-      answered: true,
+      kind: "from-paper" as const,
     });
     const reply = await askPaper(parsePaperStructure(RAW), "How many copies?", {
       provider,

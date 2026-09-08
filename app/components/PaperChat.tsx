@@ -10,10 +10,12 @@ interface Citation {
   match: "exact" | "approximate";
 }
 
+type AnswerKind = "from-paper" | "background" | "not-addressed";
+
 interface Exchange {
   question: string;
   answer?: string;
-  answered?: boolean;
+  kind?: AnswerKind;
   grounded?: boolean;
   citations?: Citation[];
   error?: string;
@@ -73,7 +75,7 @@ export function PaperChat({
               ? {
                   ...x,
                   answer: data.answer,
-                  answered: data.answered,
+                  kind: data.kind,
                   grounded: data.grounded,
                   citations: data.citations,
                 }
@@ -97,8 +99,9 @@ export function PaperChat({
     <section className="card chat">
       <h2>Ask the paper</h2>
       <p className="sub">
-        Answered only from {paperTitle.length > 60 ? "this paper" : paperTitle}, with the
-        passages behind each answer. If the paper does not say, it says so.
+        Answers about {paperTitle.length > 60 ? "this paper" : paperTitle} come with the
+        passages behind them. Ask about a concept the paper assumes and you will get an
+        explanation instead, marked as not coming from the paper.
       </p>
 
       {exchanges.map((x, i) => (
@@ -114,6 +117,11 @@ export function PaperChat({
             <p className="a sub">Reading the paper…</p>
           ) : (
             <>
+              {x.kind === "background" && (
+                <p className="kind background">
+                  General background — not from this paper
+                </p>
+              )}
               <p className="a">{x.answer}</p>
               {x.citations && x.citations.length > 0 ? (
                 <p className="sources">
@@ -129,7 +137,7 @@ export function PaperChat({
                   ))}
                 </p>
               ) : (
-                x.answered && (
+                x.kind === "from-paper" && (
                   <p className="sources unsupported">
                     Nothing in the paper was found to support this. Treat it with
                     suspicion — the answer may describe something the paper does not say.
