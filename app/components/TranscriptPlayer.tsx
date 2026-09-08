@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { VoiceAsk } from "./VoiceAsk";
 
 export interface Turn {
   speaker: "host" | "guest" | "narrator";
@@ -36,11 +37,14 @@ export function TranscriptPlayer({
   turns,
   timings,
   citations = [],
+  episodeId,
 }: {
   audioUrl: string;
   turns: Turn[];
   timings: Timing[];
   citations?: Citation[];
+  /** Enables asking a question out loud, which pauses and resumes playback. */
+  episodeId?: string;
 }) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [currentMs, setCurrentMs] = useState(0);
@@ -75,6 +79,29 @@ export function TranscriptPlayer({
       ?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [activeIndex, follow]);
 
+  /**
+   * Pause for a spoken question, and pick up exactly where it left off.
+   *
+   * Resuming only if the episode was actually playing: a listener who paused,
+   * thought, then asked something does not expect the answer to start the
+   * episode up on its own.
+   */
+  const wasPlaying = useRef(false);
+  const pauseForQuestion = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    wasPlaying.current = !audio.paused;
+    audio.pause();
+  };
+  const resumeAfterQuestion = () => {
+    const audio = audioRef.current;
+    if (!audio || !wasPlaying.current) return;
+    wasPlaying.current = false;
+    void audio.play().catch(() => {
+      /* the listener can press play themselves */
+    });
+  };
+
   const seekTo = (turnIndex: number) => {
     const t = ordered.find((x) => x.turnIndex === turnIndex);
     const audio = audioRef.current;
@@ -108,6 +135,13 @@ export function TranscriptPlayer({
           </label>
           <span style={{ color: "var(--faint)" }}>click any line to jump</span>
         </div>
+        {episodeId && (
+          <VoiceAsk
+            episodeId={episodeId}
+            onPause={pauseForQuestion}
+            onResume={resumeAfterQuestion}
+          />
+        )}
       </div>
 
       <div>

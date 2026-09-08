@@ -22,7 +22,7 @@ import {
 } from "../tts/index";
 import { sliceWav } from "../tts/wav";
 import { runAudioChecks } from "../eval/audioChecks";
-import { WhisperCppProvider, whisperAvailable } from "../eval/asr";
+import { WhisperCppProvider, whisperAvailable } from "../asr/index";
 import { verifyPerTurn } from "../eval/transcriptFidelity";
 import { estimateCost } from "../eval/report";
 import { toJobError } from "./errors";

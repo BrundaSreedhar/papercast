@@ -23,6 +23,8 @@ export default async function Episode({ params }: { params: Promise<{ id: string
     <main className="wrap">
       <p className="sub">
         <Link href="/library">← Library</Link>
+        {" · "}
+        <Link href="/">New episode</Link>
       </p>
       <h1>{record.paperTitle}</h1>
       <p className="sub">
@@ -38,6 +40,7 @@ export default async function Episode({ params }: { params: Promise<{ id: string
           turns={record.episode.turns}
           timings={record.timings ?? []}
           citations={record.citations ?? []}
+          episodeId={record.id}
         />
       ) : (
         <section className="card" style={{ marginTop: "1.5rem" }}>

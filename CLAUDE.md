@@ -92,10 +92,12 @@ touches it. Do not add anything that makes an ordinary generation depend on the
 judge — citations, references and progress reporting must all work with review
 switched off.
 
-Known layering debt, not yet fixed: `lib/jobs/pipeline.ts` imports
-`runAudioChecks`, `WhisperCppProvider`, `verifyPerTurn` and `estimateCost` from
-`lib/eval/`. Those are production concerns living in the wrong folder. Moving
-them out is a planned refactor — don't add more imports in that direction.
+Known layering debt, partly paid: `lib/jobs/pipeline.ts` still imports
+`runAudioChecks`, `verifyPerTurn` and `estimateCost` from `lib/eval/`. Those are
+production concerns living in the wrong folder. Transcription has already moved
+out to `lib/asr/` — it gained a second production caller when a listener could
+ask a question out loud, and a third import in that direction was the wrong way
+to answer it. Move the remaining three the same way rather than adding more.
 
 ## Do not run evals on every change
 

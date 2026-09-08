@@ -31,6 +31,9 @@ export default async function Library() {
 
   return (
     <main className="wrap">
+      <p className="sub">
+        <Link href="/">← New episode</Link>
+      </p>
       <h1>Library</h1>
       <p className="sub">
         {episodes.length === 0
