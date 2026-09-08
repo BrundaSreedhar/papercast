@@ -44,7 +44,7 @@ export default async function Library() {
           <Bars />
           <strong>No episodes yet</strong>
           <p style={{ margin: 0 }}>
-            Everything you make lands here — with its transcript, its sources, and
+            Everything you make lands here, with its transcript, its sources, and
             somewhere to ask the paper questions.
           </p>
           <p style={{ margin: "0.9rem 0 0" }}>

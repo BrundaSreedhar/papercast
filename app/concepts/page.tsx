@@ -58,7 +58,7 @@ export default async function Concepts() {
         {episodes.length === 1 ? "" : "s"}
         {shared.length > 0
           ? `, ${shared.length} of them shared between more than one.`
-          : ". Nothing is shared between episodes yet — that needs two papers that overlap."}
+          : ". Nothing is shared between episodes yet; that needs two papers that overlap."}
       </p>
 
       <ConceptGraph map={map} titles={titles} />

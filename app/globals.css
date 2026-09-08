@@ -1171,27 +1171,20 @@ audio {
    adjective about it. */
 .pitch {
   list-style: none;
-  margin: 1.5rem 0 0;
+  margin: 0.9rem 0 0;
   padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
-  gap: 1rem;
-}
-.pitch li {
-  padding: 0.9rem 1rem;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.1rem;
   font-family: ui-sans-serif, system-ui, sans-serif;
-  font-size: 0.82rem;
-  line-height: 1.55;
+  font-size: 0.8rem;
   color: var(--muted);
 }
-.pitch strong {
-  display: block;
-  margin-bottom: 0.25rem;
-  color: var(--ink);
-  font-size: 0.88rem;
+/* A tick before each, so three claims read as a list without three boxes. */
+.pitch li::before {
+  content: "✓";
+  margin-right: 0.35rem;
+  color: var(--accent);
 }
 
 /* A toggle that costs time or money says so, next to itself. */
@@ -1204,12 +1197,9 @@ audio {
 }
 .controls .toggle em {
   display: block;
-  margin-top: 0.15rem;
-  max-width: 22rem;
   font-style: normal;
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   color: var(--faint);
-  line-height: 1.45;
 }
 
 /* ── pick up where you left off ──────────────────────────────────────── */

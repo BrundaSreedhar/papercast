@@ -83,7 +83,7 @@ export default async function Episode({ params }: { params: Promise<{ id: string
       ) : (
         <section className="card" style={{ marginTop: "1.5rem" }}>
           <p className="sub" style={{ margin: 0 }}>
-            Transcript only — this run made no audio.
+            Transcript only. This run made no audio.
           </p>
           <div style={{ marginTop: "1rem" }}>
             {record.episode.turns.map((turn, i) => {

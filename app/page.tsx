@@ -251,27 +251,15 @@ export default function Home() {
     <main className="wrap">
       <h1>Turn a paper into an episode</h1>
       <p className="sub">
-        Drop in a PDF and get something worth listening to — saying only what the paper
+        Drop in a PDF and get something worth listening to, saying only what the paper
         says.
       </p>
 
       {!running && !summary && (
         <ul className="pitch">
-          <li>
-            <strong>Every line traced</strong>
-            Turns carry the section and page they came from, so you can check any claim
-            against the paper rather than taking it on trust.
-          </li>
-          <li>
-            <strong>Ask it anything</strong>
-            Question the paper by typing or out loud — the episode pauses, answers, and
-            picks up where it left off.
-          </li>
-          <li>
-            <strong>Runs on nothing</strong>A local model and a local voice make a
-            complete episode with no account anywhere. Frontier models are a dropdown
-            away.
-          </li>
+          <li>Every line traced to its page</li>
+          <li>Ask the paper questions, by voice or text</li>
+          <li>Runs locally, no account needed</li>
         </ul>
       )}
 
@@ -298,7 +286,7 @@ export default function Home() {
               </div>
               <p className="note">
                 This is a public demo, so it runs a fixed shelf of papers rather than
-                accepting uploads — a link anyone can open should not be able to spend an
+                accepting uploads. A link anyone can open should not be able to spend an
                 API key on an arbitrary file. It makes {demo.maxMinutes} minutes at a
                 time, one episode at a time. Run it on your own PDF by cloning the
                 repository, where none of that applies.
@@ -378,10 +366,7 @@ export default function Home() {
               />
               <span>
                 fact-check and repair the script
-                <em>
-                  Grades every claim against the paper and rewrites the ones that fail.
-                  Roughly doubles the time and the cost.
-                </em>
+                <em>Roughly doubles the time and the cost.</em>
               </span>
             </label>
             {/* Verification transcribes the audio back with whisper.cpp, which
@@ -395,10 +380,7 @@ export default function Home() {
                 />
                 <span>
                   verify the audio afterwards
-                  <em>
-                    Transcribes the finished recording and checks it against the script.
-                    Free, and adds about a minute.
-                  </em>
+                  <em>Free, adds about a minute.</em>
                 </span>
               </label>
             )}
@@ -451,7 +433,7 @@ export default function Home() {
         <section className="err" style={{ marginTop: "1.5rem" }}>
           <strong>
             {error.failedStage
-              ? `That didn't work — it failed while ${lowerFirst(STAGE_LABELS[error.failedStage] ?? error.failedStage)}`
+              ? `That didn't work. It failed while ${lowerFirst(STAGE_LABELS[error.failedStage] ?? error.failedStage)}`
               : "That didn't work"}
           </strong>
           {error.message}
@@ -495,7 +477,7 @@ export default function Home() {
             )}
             {summary.reviewError && (
               <span title={summary.reviewError.message}>
-                <b>unchecked</b> — the fact-check did not run
+                <b>unchecked</b>, the fact-check did not run
               </span>
             )}
             {summary.review && (

@@ -155,9 +155,7 @@ export function PaperChat({
           ) : (
             <>
               {x.kind === "background" && (
-                <p className="kind background">
-                  General background — not from this paper
-                </p>
+                <p className="kind background">General background, not from this paper</p>
               )}
               <p className="a">{x.answer}</p>
               {x.citations && x.citations.length > 0 ? (
@@ -177,7 +175,7 @@ export function PaperChat({
                 x.kind === "from-paper" && (
                   <p className="sources unsupported">
                     Nothing in the paper was found to support this. Treat it with
-                    suspicion — the answer may describe something the paper does not say.
+                    suspicion. The answer may describe something the paper does not say.
                   </p>
                 )
               )}

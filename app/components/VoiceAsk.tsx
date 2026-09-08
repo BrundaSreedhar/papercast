@@ -166,7 +166,7 @@ export function VoiceAsk({
         <div className="voice-reply">
           <p className="q">“{reply.question}”</p>
           {reply.kind === "background" && (
-            <p className="kind background">General background — not from this paper</p>
+            <p className="kind background">General background, not from this paper</p>
           )}
           <p className="a">{reply.answer}</p>
           {reply.citations.length > 0 ? (
