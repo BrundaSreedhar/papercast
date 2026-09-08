@@ -27,6 +27,7 @@ export function Bars() {
 export function SiteHeader() {
   const path = usePathname();
   const onLibrary = path.startsWith("/library");
+  const onConcepts = path.startsWith("/concepts");
 
   return (
     <header className="masthead">
@@ -36,11 +37,14 @@ export function SiteHeader() {
           PaperCast
         </Link>
         <nav>
-          <Link href="/" className={onLibrary ? undefined : "here"}>
+          <Link href="/" className={onLibrary || onConcepts ? undefined : "here"}>
             New episode
           </Link>
           <Link href="/library" className={onLibrary ? "here" : undefined}>
             Library
+          </Link>
+          <Link href="/concepts" className={onConcepts ? "here" : undefined}>
+            Concepts
           </Link>
         </nav>
         <ThemeToggle />

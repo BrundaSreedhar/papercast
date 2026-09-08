@@ -1047,3 +1047,120 @@ audio {
     transition: none;
   }
 }
+
+/* ── the concept map ─────────────────────────────────────────────────── */
+
+.graph {
+  margin-top: 1.5rem;
+}
+.graph-svg {
+  width: 100%;
+  max-width: 40rem;
+  margin: 0 auto;
+  display: block;
+  overflow: visible;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+
+.edge {
+  stroke: var(--line);
+  opacity: 0.5;
+  transition:
+    opacity 0.15s,
+    stroke 0.15s;
+}
+.edge.lit {
+  opacity: 0.85;
+}
+.node {
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.node.dimmed {
+  opacity: 0.22;
+}
+.dot {
+  fill: var(--surface);
+  stroke: var(--faint);
+  stroke-width: 1.5;
+}
+.dot.shared {
+  fill: var(--accent);
+  stroke: var(--accent);
+}
+.label {
+  font-size: 12px;
+  fill: var(--muted);
+}
+.label.shared {
+  fill: var(--ink);
+  font-weight: 600;
+}
+.node:hover .label {
+  fill: var(--ink);
+}
+
+.graph-detail {
+  min-height: 2.6rem;
+  margin-top: 0.5rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.graph-detail strong {
+  color: var(--ink);
+}
+.graph-detail span {
+  color: var(--muted);
+}
+
+.section-label {
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin: 0 0 0.6rem;
+}
+.concept-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+.concept-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: baseline;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--line);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.85rem;
+}
+.concept-term {
+  color: var(--ink);
+}
+.concept-term.shared {
+  color: var(--accent);
+  font-weight: 600;
+}
+.concept-episodes {
+  color: var(--muted);
+  margin-left: auto;
+  text-align: right;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .edge,
+  .node {
+    transition: none;
+  }
+}
