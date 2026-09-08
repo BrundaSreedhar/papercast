@@ -49,10 +49,15 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
         .slice(-10)
     : [];
 
+  // Default to whichever model wrote the episode, so an answer comes from the
+  // same place the transcript did unless the reader says otherwise.
+  const name = (body.provider ?? record.provider) as ProviderName | undefined;
+
+  if (new URL(req.url).searchParams.get("stream") === "1") {
+    return streamAnswer(id, record.paper, question, history, name);
+  }
+
   try {
-    // Default to whichever model wrote the episode, so an answer comes from the
-    // same place the transcript did unless the reader says otherwise.
-    const name = (body.provider ?? record.provider) as ProviderName | undefined;
     const reply = await askPaper(record.paper, question, {
       provider: getProvider(name),
       history,
@@ -63,4 +68,72 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     const e = toJobError(err);
     return NextResponse.json({ error: e.message, remedy: e.remedy }, { status: 502 });
   }
+}
+
+/**
+ * The same answer, sent as it is written.
+ *
+ * Two kinds of event, because they are two different things. `text` is the
+ * prose so far and may be replaced wholesale by the next one — it is a preview,
+ * not a transcript of deltas. `done` carries the real reply: the kind, the
+ * citations that survived being looked up, and whether it is grounded. A client
+ * that renders `text` and then ignores `done` would show an answer with no
+ * label and no sources, which is the one thing this must not do.
+ */
+function streamAnswer(
+  id: string,
+  paper: Awaited<ReturnType<typeof getEpisode>> extends infer R
+    ? R extends { paper: infer P }
+      ? P
+      : never
+    : never,
+  question: string,
+  history: ChatTurn[],
+  provider: ProviderName | undefined,
+): Response {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    async start(controller) {
+      let closed = false;
+      const send = (event: string, data: unknown) => {
+        if (closed) return;
+        try {
+          controller.enqueue(
+            encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`),
+          );
+        } catch {
+          closed = true; // the reader went away
+        }
+      };
+
+      try {
+        const reply = await askPaper(paper, question, {
+          provider: getProvider(provider),
+          history,
+          onText: (soFar) => send("text", { text: soFar }),
+        });
+        send("done", reply);
+      } catch (err) {
+        console.error(`[chat ${id}]`, err);
+        const e = toJobError(err);
+        send("failed", { error: e.message, remedy: e.remedy });
+      } finally {
+        closed = true;
+        try {
+          controller.close();
+        } catch {
+          /* already closed */
+        }
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    },
+  });
 }

@@ -110,7 +110,18 @@ const HISTORY_TURNS = 6;
 export async function askPaper(
   paper: PaperStructure,
   question: string,
-  opts: { provider: LLMProvider; history?: ChatTurn[] },
+  opts: {
+    provider: LLMProvider;
+    history?: ChatTurn[];
+    /**
+     * Called with the answer's prose as it arrives, on providers that stream.
+     *
+     * Only the prose: the kind and the quotes are decided by the same response
+     * but showing them mid-flight would mean labelling an answer "from the
+     * paper" before it is, and offering citations that may still be discarded.
+     */
+    onText?: (soFar: string) => void;
+  },
 ): Promise<PaperReply> {
   const history = (opts.history ?? []).slice(-HISTORY_TURNS);
   const conversation = history
@@ -130,6 +141,7 @@ export async function askPaper(
     maxTokens: 2_000,
     // Answering a question about a document is a lookup, not a performance.
     temperature: 0.2,
+    ...(opts.onText ? { stream: { field: "answer", onText: opts.onText } } : {}),
   });
 
   const kind = result.data.kind;

@@ -19,6 +19,19 @@ export interface StructuredRequest<T> {
   schemaDescription?: string;
   maxTokens?: number;
   temperature?: number;
+  /**
+   * Called with one field's value as it arrives, when the provider streams.
+   *
+   * Optional on both sides: a provider that cannot stream ignores it, and a
+   * caller that does not pass it gets the behaviour it always had. The field is
+   * named rather than assumed because only the caller knows which part of its
+   * schema is worth showing before the rest lands — for an answer that is the
+   * prose, never the quotes it is still deciding on.
+   */
+  stream?: {
+    field: string;
+    onText: (soFar: string) => void;
+  };
 }
 
 export interface Usage {

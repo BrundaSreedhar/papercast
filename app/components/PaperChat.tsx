@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface Citation {
   page: number;
@@ -42,6 +42,20 @@ export function PaperChat({
   const [asking, setAsking] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Send the paper through the model as soon as the page is open, so the first
+  // question does not pay for reading it. Fire and forget: the response says
+  // whether it warmed, and there is nothing useful to do with either answer.
+  useEffect(() => {
+    const stop = new AbortController();
+    void fetch(`/api/library/${episodeId}/warm`, {
+      method: "POST",
+      signal: stop.signal,
+    }).catch(() => {
+      /* warming is an optimization, never an error the reader sees */
+    });
+    return () => stop.abort();
+  }, [episodeId]);
+
   async function ask(e: React.FormEvent) {
     e.preventDefault();
     const q = question.trim();
@@ -61,34 +75,57 @@ export function PaperChat({
         { role: "assistant" as const, content: x.answer! },
       ]);
 
+    const patch = (fields: Partial<Exchange>) =>
+      setExchanges((list) => list.map((x, i) => (i === index ? { ...x, ...fields } : x)));
+
     try {
-      const res = await fetch(`/api/library/${episodeId}/chat`, {
+      const res = await fetch(`/api/library/${episodeId}/chat?stream=1`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question: q, history }),
       });
-      const data = await res.json();
-      setExchanges((list) =>
-        list.map((x, i) =>
-          i === index
-            ? res.ok
-              ? {
-                  ...x,
-                  answer: data.answer,
-                  kind: data.kind,
-                  grounded: data.grounded,
-                  citations: data.citations,
-                }
-              : { ...x, error: data.error ?? "That did not work.", remedy: data.remedy }
-            : x,
-        ),
-      );
+
+      if (!res.ok || !res.body) {
+        const data = await res.json().catch(() => ({}));
+        patch({ error: data.error ?? "That did not work.", remedy: data.remedy });
+        return;
+      }
+
+      // Read the events by hand rather than with EventSource, which can only
+      // issue GETs and this is a POST carrying the question and its history.
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        // Frames are separated by a blank line; a partial one stays buffered.
+        const frames = buffer.split("\n\n");
+        buffer = frames.pop() ?? "";
+        for (const frame of frames) {
+          const event = /^event: (.+)$/m.exec(frame)?.[1];
+          const raw = /^data: (.+)$/m.exec(frame)?.[1];
+          if (!event || !raw) continue;
+          const data = JSON.parse(raw);
+
+          // `text` is the prose so far, replaced wholesale each time; `done`
+          // carries the label and the citations that survived being looked up.
+          if (event === "text") patch({ answer: data.text });
+          else if (event === "done")
+            patch({
+              answer: data.answer,
+              kind: data.kind,
+              grounded: data.grounded,
+              citations: data.citations,
+            });
+          else if (event === "failed") patch({ error: data.error, remedy: data.remedy });
+        }
+      }
     } catch {
-      setExchanges((list) =>
-        list.map((x, i) =>
-          i === index ? { ...x, error: "Could not reach the server." } : x,
-        ),
-      );
+      patch({ error: "Could not reach the server." });
     } finally {
       setAsking(false);
       inputRef.current?.focus();
