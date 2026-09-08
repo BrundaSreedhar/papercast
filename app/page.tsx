@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   TranscriptPlayer,
@@ -21,6 +23,12 @@ const STAGE_LABELS: Record<string, string> = {
   reviewing: "Fact-checking it against the paper",
   synthesizing: "Recording it",
   verifying: "Checking the audio against the script",
+};
+
+const FORMAT_LABEL: Record<string, string> = {
+  dialogue: "two hosts",
+  solo: "solo",
+  eli5: "for a five-year-old",
 };
 
 /** "Reading the paper" reads as a heading; mid-sentence it needs a small letter. */
@@ -74,6 +82,9 @@ export default function Home() {
   const [revise, setRevise] = useState(false);
   const [provider, setProvider] = useState("open");
   const [format, setFormat] = useState("dialogue");
+  const [recent, setRecent] = useState<
+    { id: string; paperTitle: string; format: string }[]
+  >([]);
   const [over, setOver] = useState(false);
 
   const [progress, setProgress] = useState<Progress | null>(null);
@@ -107,6 +118,15 @@ export default function Home() {
   useEffect(() => {
     if (demo) setMinutes((m) => Math.min(m, demo.maxMinutes));
   }, [demo]);
+
+  // The shelf, so someone returning lands on what they already made rather than
+  // an empty form. Failing quietly: this is a convenience, not the page.
+  useEffect(() => {
+    void fetch("/api/library")
+      .then((r) => (r.ok ? r.json() : []))
+      .then(setRecent)
+      .catch(() => setRecent([]));
+  }, []);
 
   const start = useCallback(async () => {
     if (!ready) return;
@@ -232,8 +252,28 @@ export default function Home() {
       <h1>Turn a paper into an episode</h1>
       <p className="sub">
         Drop in a PDF and get something worth listening to — saying only what the paper
-        says, with every line traceable back to the page it came from.
+        says.
       </p>
+
+      {!running && !summary && (
+        <ul className="pitch">
+          <li>
+            <strong>Every line traced</strong>
+            Turns carry the section and page they came from, so you can check any claim
+            against the paper rather than taking it on trust.
+          </li>
+          <li>
+            <strong>Ask it anything</strong>
+            Question the paper by typing or out loud — the episode pauses, answers, and
+            picks up where it left off.
+          </li>
+          <li>
+            <strong>Runs on nothing</strong>A local model and a local voice make a
+            complete episode with no account anywhere. Frontier models are a dropdown
+            away.
+          </li>
+        </ul>
+      )}
 
       {!running && !summary && (
         <section>
@@ -330,24 +370,36 @@ export default function Home() {
                 <option value="eli5">explain like I&apos;m 5</option>
               </select>
             </label>
-            <label>
+            <label className="toggle">
               <input
                 type="checkbox"
                 checked={revise}
                 onChange={(e) => setRevise(e.target.checked)}
               />
-              fact-check and repair the script
+              <span>
+                fact-check and repair the script
+                <em>
+                  Grades every claim against the paper and rewrites the ones that fail.
+                  Roughly doubles the time and the cost.
+                </em>
+              </span>
             </label>
             {/* Verification transcribes the audio back with whisper.cpp, which
                 the deployed image does not carry. */}
             {!demo && (
-              <label>
+              <label className="toggle">
                 <input
                   type="checkbox"
                   checked={verify}
                   onChange={(e) => setVerify(e.target.checked)}
                 />
-                verify the audio afterwards
+                <span>
+                  verify the audio afterwards
+                  <em>
+                    Transcribes the finished recording and checks it against the script.
+                    Free, and adds about a minute.
+                  </em>
+                </span>
               </label>
             )}
             <button onClick={start} disabled={!ready}>
@@ -373,6 +425,25 @@ export default function Home() {
           <div className="bar">
             <i style={{ width: `${progress.percent}%` }} />
           </div>
+        </section>
+      )}
+
+      {!running && !summary && recent.length > 0 && (
+        <section className="recent">
+          <h2 className="section-label">Pick up where you left off</h2>
+          <ul>
+            {recent.slice(0, 4).map((e) => (
+              <li key={e.id}>
+                <Link href={`/library/${e.id}`}>{e.paperTitle}</Link>
+                <span>{FORMAT_LABEL[e.format] ?? e.format}</span>
+              </li>
+            ))}
+          </ul>
+          {recent.length > 4 && (
+            <p className="note" style={{ marginTop: "0.6rem" }}>
+              <Link href="/library">All {recent.length} episodes →</Link>
+            </p>
+          )}
         </section>
       )}
 
