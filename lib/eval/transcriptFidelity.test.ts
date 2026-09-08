@@ -29,12 +29,21 @@ const EPISODE: Episode = {
 
 describe("normalizeWords", () => {
   it("lowercases and strips punctuation", () => {
-    expect(normalizeWords("Welcome to PaperCast!")).toEqual(["welcome", "to", "papercast"]);
+    expect(normalizeWords("Welcome to PaperCast!")).toEqual([
+      "welcome",
+      "to",
+      "papercast",
+    ]);
   });
 
   it("keeps numbers and hyphenated words intact", () => {
     expect(normalizeWords("a 4/6 write-quorum of 10GB")).toEqual([
-      "a", "4", "6", "write-quorum", "of", "10gb",
+      "a",
+      "4",
+      "6",
+      "write-quorum",
+      "of",
+      "10gb",
     ]);
   });
 

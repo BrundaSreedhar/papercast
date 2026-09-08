@@ -29,6 +29,8 @@ const record = (id: string, over: Partial<EpisodeRecord> = {}): EpisodeRecord =>
   minutes: 4,
   format: "dialogue",
   turnCount: 2,
+  summary: "Aurora pushes redo processing into the storage tier.",
+  keyPoints: ["The network is the bottleneck."],
   hasAudio: false,
   episode: { summary: "s", keyPoints: ["k"], turns: [{ speaker: "host", text: "hi" }] },
   paper: { title: "Amazon Aurora", abstract: "a", sections: [], wordCount: 2 },
@@ -93,6 +95,29 @@ describe("the library", () => {
       /valid episode id/i,
     );
     await expect(getEpisode("a/b", dir)).rejects.toThrow(/valid episode id/i);
+  });
+
+  it("keeps the summary on the shelf without loading the transcript", async () => {
+    await saveEpisode(record("a"), dir);
+    const [summary] = await listEpisodes(dir);
+    expect(summary!.summary).toContain("redo processing");
+    expect(summary!.keyPoints).toHaveLength(1);
+    expect("episode" in summary!).toBe(false);
+  });
+
+  it("finds the summary of an episode saved before it moved to the top level", async () => {
+    // Older records carry it only on the episode. Reading it from there keeps
+    // them showing a summary rather than needing a migration.
+    const old = record("legacy");
+    delete (old as Partial<EpisodeRecord>).summary;
+    delete (old as Partial<EpisodeRecord>).keyPoints;
+    old.episode.summary = "An older episode, summarised inside the episode.";
+    old.episode.keyPoints = ["Still here."];
+    await saveEpisode(old, dir);
+
+    const [summary] = await listEpisodes(dir);
+    expect(summary!.summary).toBe("An older episode, summarised inside the episode.");
+    expect(summary!.keyPoints).toEqual(["Still here."]);
   });
 
   it("removes an episode, and stays quiet about one already gone", async () => {

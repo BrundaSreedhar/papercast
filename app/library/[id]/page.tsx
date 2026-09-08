@@ -34,6 +34,20 @@ export default async function Episode({ params }: { params: Promise<{ id: string
           : ""}
       </p>
 
+      {record.summary && (
+        <section className="card summary">
+          <h2>What this episode covers</h2>
+          <p>{record.summary}</p>
+          {record.keyPoints?.length > 0 && (
+            <ul className="key-points">
+              {record.keyPoints.map((point, i) => (
+                <li key={i}>{point}</li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
       {record.hasAudio ? (
         <TranscriptPlayer
           audioUrl={`/audio/${record.id}.wav`}

@@ -45,12 +45,30 @@ export async function saveEpisode(
   await rename(tmp, target);
 }
 
+/**
+ * Fill in what an older record does not carry.
+ *
+ * The summary and key points used to live only inside `episode`. Reading them
+ * back out here means every caller sees the same shape whenever a record was
+ * written, which is cheaper and less error-prone than migrating files on disk
+ * or teaching each page to look in two places.
+ */
+function normalize(record: EpisodeRecord): EpisodeRecord {
+  return {
+    ...record,
+    summary: record.summary ?? record.episode?.summary ?? "",
+    keyPoints: record.keyPoints ?? record.episode?.keyPoints ?? [],
+  };
+}
+
 export async function getEpisode(
   id: string,
   dir = libraryDir(),
 ): Promise<EpisodeRecord | undefined> {
   try {
-    return JSON.parse(await readFile(pathFor(dir, id), "utf8")) as EpisodeRecord;
+    return normalize(
+      JSON.parse(await readFile(pathFor(dir, id), "utf8")) as EpisodeRecord,
+    );
   } catch (err) {
     if ((err as NodeJS.ErrnoException)?.code === "ENOENT") return undefined;
     throw err;
@@ -78,7 +96,7 @@ export async function listEpisodes(dir = libraryDir()): Promise<EpisodeSummary[]
     if (!name.endsWith(".json")) continue;
     try {
       const record = JSON.parse(await readFile(join(dir, name), "utf8")) as EpisodeRecord;
-      if (record?.id) out.push(toSummary(record));
+      if (record?.id) out.push(toSummary(normalize(record)));
     } catch {
       // Unreadable record: skipped, so the rest of the shelf still opens.
     }

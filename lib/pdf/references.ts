@@ -49,7 +49,9 @@ function guessTitle(raw: string): string | undefined {
     return initials < 2;
   });
   if (candidates.length === 0) return undefined;
-  return candidates.reduce((a, b) => (b.length > a.length ? b : a)).replace(/[.,;]+$/, "");
+  return candidates
+    .reduce((a, b) => (b.length > a.length ? b : a))
+    .replace(/[.,;]+$/, "");
 }
 
 /**
@@ -81,19 +83,23 @@ export function parseReferences(text: string): Reference[] {
           .filter((p) => p.length > 30)
           .map((raw) => ({ raw }));
 
-  return entries
-    .filter((e) => e.raw.length > 20)
-    // Bibliographies carry manuals, specifications and bare links alongside
-    // papers. They are real citations but not things to go and read next.
-    .filter((e) => !/https?:\/\/|available at|\bmanual\b|\bdocumentation\b/i.test(e.raw))
-    .map((e) => {
-      const year = e.raw.match(/\b(19|20)\d{2}\b/);
-      return {
-        ...e,
-        title: guessTitle(e.raw),
-        year: year ? Number(year[0]) : undefined,
-      };
-    });
+  return (
+    entries
+      .filter((e) => e.raw.length > 20)
+      // Bibliographies carry manuals, specifications and bare links alongside
+      // papers. They are real citations but not things to go and read next.
+      .filter(
+        (e) => !/https?:\/\/|available at|\bmanual\b|\bdocumentation\b/i.test(e.raw),
+      )
+      .map((e) => {
+        const year = e.raw.match(/\b(19|20)\d{2}\b/);
+        return {
+          ...e,
+          title: guessTitle(e.raw),
+          year: year ? Number(year[0]) : undefined,
+        };
+      })
+  );
 }
 
 /** Normalize a title for comparison across sources. */
@@ -113,8 +119,16 @@ export function normalizeTitle(t: string): string {
  * same title on its own front page.
  */
 export function titlesMatch(a: string, b: string): boolean {
-  const wa = new Set(normalizeTitle(a).split(" ").filter((w) => w.length > 3));
-  const wb = new Set(normalizeTitle(b).split(" ").filter((w) => w.length > 3));
+  const wa = new Set(
+    normalizeTitle(a)
+      .split(" ")
+      .filter((w) => w.length > 3),
+  );
+  const wb = new Set(
+    normalizeTitle(b)
+      .split(" ")
+      .filter((w) => w.length > 3),
+  );
   if (wa.size === 0 || wb.size === 0) return false;
   let shared = 0;
   for (const w of wa) if (wb.has(w)) shared++;

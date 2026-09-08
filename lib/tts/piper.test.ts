@@ -18,7 +18,11 @@ describe("piperAvailable", () => {
     // Availability is a question, not an error: the resolver uses it to fall
     // back to a backend that needs no installation.
     await expect(
-      piperAvailable({ binary: "/nonexistent/piper", hostVoice: "/nope.onnx", guestVoice: "/nope.onnx" }),
+      piperAvailable({
+        binary: "/nonexistent/piper",
+        hostVoice: "/nope.onnx",
+        guestVoice: "/nope.onnx",
+      }),
     ).resolves.toBe(false);
   });
 });

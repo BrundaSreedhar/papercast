@@ -292,6 +292,8 @@ async function runJobStages(
         provider: generated.provider,
         model: generated.model,
         turnCount: episode.turns.length,
+        summary: episode.summary,
+        keyPoints: episode.keyPoints,
         hasAudio: false,
         review,
         // No synthesis happened on this path, so the call count is honestly zero
@@ -380,6 +382,8 @@ async function runJobStages(
       provider: generated.provider,
       model: generated.model,
       turnCount: episode.turns.length,
+      summary: episode.summary,
+      keyPoints: episode.keyPoints,
       totalMs: audio.totalMs,
       hasAudio: true,
       transcriptRecall,

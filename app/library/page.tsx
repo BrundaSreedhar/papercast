@@ -57,6 +57,7 @@ export default async function Library() {
             <li key={e.id}>
               <Link href={`/library/${e.id}`} className="shelf-item">
                 <strong>{e.paperTitle}</strong>
+                {e.summary && <span className="shelf-summary">{e.summary}</span>}
                 <span className="shelf-meta">
                   {FORMAT_LABEL[e.format] ?? e.format} · {e.turnCount} turns
                   {e.totalMs

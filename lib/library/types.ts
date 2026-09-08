@@ -40,6 +40,16 @@ export interface EpisodeRecord {
   review?: JobReview;
   cost?: JobCost;
 
+  /**
+   * The episode's own summary and key points, lifted to the top level.
+   *
+   * They live inside `episode` too, but the shelf shows them and the shelf
+   * deliberately never loads a whole transcript — a list of twenty episodes
+   * would mean reading twenty papers off disk to print twenty paragraphs.
+   */
+  summary: string;
+  keyPoints: string[];
+
   episode: Episode;
   citations?: TurnCitation[];
   timings?: TurnTiming[];

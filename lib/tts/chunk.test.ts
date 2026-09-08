@@ -26,7 +26,9 @@ describe("chunkForSynthesis", () => {
   });
 
   it("keeps every chunk within the limit", () => {
-    const text = Array.from({ length: 60 }, (_, i) => `Sentence number ${i} here.`).join(" ");
+    const text = Array.from({ length: 60 }, (_, i) => `Sentence number ${i} here.`).join(
+      " ",
+    );
     const chunks = chunkForSynthesis(text, 200);
     expect(chunks.length).toBeGreaterThan(1);
     for (const c of chunks) expect(c.length).toBeLessThanOrEqual(200);

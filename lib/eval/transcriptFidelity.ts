@@ -176,7 +176,10 @@ export function fidelityCheck(report: FidelityReport): CheckResult {
  */
 export async function verifyPerTurn(
   episode: Episode,
-  audio: { audio: Buffer; timings: { turnIndex: number; startMs: number; endMs: number }[] },
+  audio: {
+    audio: Buffer;
+    timings: { turnIndex: number; startMs: number; endMs: number }[];
+  },
   asr: { transcribe(wav: Buffer): Promise<string> },
   slice: (wav: Buffer, startMs: number, endMs: number) => Buffer,
   onProgress?: (done: number, total: number) => void,

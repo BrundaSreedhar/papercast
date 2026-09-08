@@ -744,3 +744,47 @@ audio {
   font-size: 0.8rem;
   color: var(--error);
 }
+
+/* ── the episode summary ─────────────────────────────────────────────── */
+
+.summary {
+  margin-top: 1.5rem;
+}
+.summary h2 {
+  margin: 0 0 0.5rem;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.summary p {
+  margin: 0;
+}
+.key-points {
+  margin: 0.9rem 0 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.94rem;
+  color: var(--muted);
+}
+.key-points::marker {
+  color: var(--accent);
+}
+.key-points li::marker {
+  color: var(--accent);
+}
+
+/* Three lines on a card: enough to tell two episodes about the same paper
+   apart, not so much that the shelf stops being scannable. */
+.shelf-summary {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-top: 0.35rem;
+  font-size: 0.88rem;
+  color: var(--muted);
+}

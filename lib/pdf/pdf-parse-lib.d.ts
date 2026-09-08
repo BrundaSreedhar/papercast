@@ -27,6 +27,9 @@ declare module "pdf-parse/lib/pdf-parse.js" {
     version?: string;
   }
 
-  function pdf(data: Buffer | Uint8Array, options?: PdfParseOptions): Promise<PdfParseResult>;
+  function pdf(
+    data: Buffer | Uint8Array,
+    options?: PdfParseOptions,
+  ): Promise<PdfParseResult>;
   export default pdf;
 }

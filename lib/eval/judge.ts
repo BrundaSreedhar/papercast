@@ -15,17 +15,8 @@ import type { Episode } from "../llm/schema";
 import type { LLMProvider, Usage } from "../llm/types";
 import { addUsage } from "../llm/usage";
 import { paperToText, type PaperStructure } from "../pdf/extract";
-import {
-  ClaimExtractionSchema,
-  CoverageSchema,
-  VerificationSchema,
-} from "./judgeSchema";
-import type {
-  Claim,
-  ClaimVerdict,
-  CoverageReport,
-  FaithfulnessReport,
-} from "./types";
+import { ClaimExtractionSchema, CoverageSchema, VerificationSchema } from "./judgeSchema";
+import type { Claim, ClaimVerdict, CoverageReport, FaithfulnessReport } from "./types";
 
 export interface JudgeOptions {
   provider: LLMProvider;
@@ -178,7 +169,9 @@ export async function scoreCoverage(
       expected: expectedContributions,
       hit,
       missed,
-      coverage: expectedContributions.length ? hit.length / expectedContributions.length : 0,
+      coverage: expectedContributions.length
+        ? hit.length / expectedContributions.length
+        : 0,
     },
     usage: result.usage,
   };

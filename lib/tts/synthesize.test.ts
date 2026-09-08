@@ -14,7 +14,12 @@ import { parseWav, buildWav, type WavFormat } from "./wav";
 import type { Speaker, TTSProvider } from "./types";
 import type { Episode } from "../llm/schema";
 
-const FMT: WavFormat = { audioFormat: 1, channels: 1, sampleRate: 22050, bitsPerSample: 16 };
+const FMT: WavFormat = {
+  audioFormat: 1,
+  channels: 1,
+  sampleRate: 22050,
+  bitsPerSample: 16,
+};
 
 /** Produces audio whose duration is proportional to the text length. */
 class StubTTS implements TTSProvider {

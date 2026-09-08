@@ -108,7 +108,8 @@ export function applyMutation(episode: Episode, kind: MutationKind): Episode {
       const t = turns[i]!;
       // 8317 is arbitrary and absent from any realistic paper.
       t.text = t.text.replace(/\b\d[\d,]*(?:\.\d+)?\b/, "8317");
-      if (!/8317/.test(t.text)) t.text += " Throughput reached 8317 transactions per second.";
+      if (!/8317/.test(t.text))
+        t.text += " Throughput reached 8317 transactions per second.";
       break;
     }
     case "fabricate-entity":
@@ -129,7 +130,8 @@ export function applyMutation(episode: Episode, kind: MutationKind): Episode {
       turns[0]!.text = `Welcome to Science Uncovered. ${turns[0]!.text}`;
       break;
     case "address-by-name":
-      turns[turns.length - 1]!.text = `Thanks, Marcus, for that. ${turns[turns.length - 1]!.text}`;
+      turns[turns.length - 1]!.text =
+        `Thanks, Marcus, for that. ${turns[turns.length - 1]!.text}`;
       break;
     case "break-alternation":
       if (turns.length >= 2) turns[1]!.speaker = turns[0]!.speaker;
