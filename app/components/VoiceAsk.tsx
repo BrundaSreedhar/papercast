@@ -37,13 +37,16 @@ type Phase = "idle" | "listening" | "thinking" | "answering";
  */
 export function VoiceAsk({
   episodeId,
-  onPause,
-  onResume,
+  onPause = () => {},
+  onResume = () => {},
+  pausesPlayback = true,
 }: {
   episodeId: string;
   /** Pause the episode. Returns nothing; the player keeps its own position. */
-  onPause: () => void;
-  onResume: () => void;
+  onPause?: () => void;
+  onResume?: () => void;
+  /** False for a transcript-only episode, where there is nothing to pause. */
+  pausesPlayback?: boolean;
 }) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [reply, setReply] = useState<Reply | null>(null);
@@ -152,7 +155,11 @@ export function VoiceAsk({
         {label}
       </button>
       {phase === "listening" && (
-        <span className="voice-hint">The episode is paused. Ask your question.</span>
+        <span className="voice-hint">
+          {pausesPlayback
+            ? "The episode is paused. Ask your question."
+            : "Listening. Ask your question."}
+        </span>
       )}
 
       {error && (

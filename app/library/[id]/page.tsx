@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getEpisode } from "@/lib/library/store";
 import { TranscriptPlayer } from "@/app/components/TranscriptPlayer";
 import { PaperChat } from "@/app/components/PaperChat";
+import { VoiceAsk } from "@/app/components/VoiceAsk";
 import { DeleteEpisode } from "@/app/components/DeleteEpisode";
 
 export const runtime = "nodejs";
@@ -85,6 +86,9 @@ export default async function Episode({ params }: { params: Promise<{ id: string
           <p className="sub" style={{ margin: 0 }}>
             Transcript only. This run made no audio.
           </p>
+          {/* Asking out loud needs a microphone, not a recording, so it works
+              here too rather than being a feature of the player. */}
+          <VoiceAsk episodeId={record.id} pausesPlayback={false} />
           <div style={{ marginTop: "1rem" }}>
             {record.episode.turns.map((turn, i) => {
               const cite = record.citations?.find((c) => c.turnIndex === i);

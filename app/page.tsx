@@ -9,6 +9,7 @@ import {
   type Timing,
   type Turn,
 } from "./components/TranscriptPlayer";
+import { PaperChat } from "./components/PaperChat";
 
 const STAGES = [
   "parsing",
@@ -507,12 +508,26 @@ export default function Home() {
           </div>
 
           {jobId && turns.length > 0 && (
-            <TranscriptPlayer
-              audioUrl={`/api/jobs/${jobId}/audio`}
-              turns={turns}
-              timings={timings}
-              citations={citations}
-            />
+            <>
+              {/*
+                The job id is the episode's id — the record is filed under it
+                when the job finishes — so everything the library page offers
+                works here the moment the episode exists. Without this a
+                listener had to find their way to the library to ask anything
+                about what they had just made.
+              */}
+              <TranscriptPlayer
+                audioUrl={`/api/jobs/${jobId}/audio`}
+                turns={turns}
+                timings={timings}
+                citations={citations}
+                episodeId={jobId}
+              />
+              <PaperChat
+                episodeId={jobId}
+                paperTitle={summary?.paperTitle ?? "this paper"}
+              />
+            </>
           )}
         </section>
       )}
