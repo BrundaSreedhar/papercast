@@ -22,9 +22,7 @@ export default async function Episode({ params }: { params: Promise<{ id: string
   return (
     <main className="wrap">
       <p className="sub">
-        <Link href="/library">← Library</Link>
-        {" · "}
-        <Link href="/">New episode</Link>
+        <Link href="/library">← All episodes</Link>
       </p>
       <h1>{record.paperTitle}</h1>
       <p className="sub">

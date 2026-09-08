@@ -18,8 +18,15 @@
   --radius: 10px;
 }
 
+/*
+ * Three states, not two. A reader who has chosen light or dark gets that
+ * choice; a reader who has chosen nothing follows the system. So the dark
+ * palette is written twice — once behind the media query, guarded so an
+ * explicit light choice beats a dark OS, and once behind the attribute, so the
+ * toggle wins in the other direction too.
+ */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #141414;
     --surface: #1c1c1c;
     --ink: #ececec;
@@ -32,6 +39,20 @@
     --active-bg: #172723;
     --error: #e08a76;
   }
+}
+
+:root[data-theme="dark"] {
+  --bg: #141414;
+  --surface: #1c1c1c;
+  --ink: #ececec;
+  --muted: #a0a0a0;
+  --faint: #6f6f6f;
+  --line: #2c2c2c;
+  --host: #5fbfa3;
+  --guest: #c79ad4;
+  --accent: #5fbfa3;
+  --active-bg: #172723;
+  --error: #e08a76;
 }
 
 * {
@@ -476,7 +497,9 @@ audio {
 
 /* ── asking out loud ─────────────────────────────────────────────────── */
 
-.voice { margin-top: 0.75rem; }
+.voice {
+  margin-top: 0.75rem;
+}
 .voice-btn {
   display: inline-flex;
   align-items: center;
@@ -490,8 +513,13 @@ audio {
   font-size: 0.85rem;
   cursor: pointer;
 }
-.voice-btn:hover { border-color: var(--accent); }
-.voice-btn:disabled { opacity: 0.6; cursor: default; }
+.voice-btn:hover {
+  border-color: var(--accent);
+}
+.voice-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
 .voice-dot {
   width: 8px;
   height: 8px;
@@ -499,14 +527,33 @@ audio {
   background: var(--faint);
   flex: 0 0 auto;
 }
-.voice-btn.recording { border-color: var(--error); }
-.voice-btn.recording .voice-dot { background: var(--error); animation: pulse 1.2s ease-in-out infinite; }
-@keyframes pulse { 50% { opacity: 0.25; } }
-@media (prefers-reduced-motion: reduce) {
-  .voice-btn.recording .voice-dot { animation: none; }
+.voice-btn.recording {
+  border-color: var(--error);
 }
-.voice-hint { margin-left: 0.6rem; font-size: 0.8rem; color: var(--muted); }
-.voice-error { margin: 0.6rem 0 0; font-size: 0.85rem; color: var(--error); }
+.voice-btn.recording .voice-dot {
+  background: var(--error);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.25;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .voice-btn.recording .voice-dot {
+    animation: none;
+  }
+}
+.voice-hint {
+  margin-left: 0.6rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.voice-error {
+  margin: 0.6rem 0 0;
+  font-size: 0.85rem;
+  color: var(--error);
+}
 .voice-reply {
   margin-top: 0.8rem;
   padding: 0.75rem 0.9rem;
@@ -514,5 +561,140 @@ audio {
   background: var(--active-bg);
   border-radius: 0 var(--radius) var(--radius) 0;
 }
-.voice-reply .q { margin: 0 0 0.4rem; font-style: italic; color: var(--muted); }
-.voice-reply .a { margin: 0; }
+.voice-reply .q {
+  margin: 0 0 0.4rem;
+  font-style: italic;
+  color: var(--muted);
+}
+.voice-reply .a {
+  margin: 0;
+}
+
+/* ── the masthead ────────────────────────────────────────────────────── */
+
+.masthead {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--line);
+}
+.masthead-inner {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 0.7rem 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+.wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: inherit;
+  text-decoration: none;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin-right: auto;
+}
+.wordmark:hover .bars i {
+  background: var(--accent);
+}
+
+/* Five bars at the heights of a spoken syllable, not a random scatter. */
+.bars {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 1.1em;
+}
+.bars i {
+  display: block;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--faint);
+  transition: background 0.2s;
+}
+.bars i:nth-child(1) {
+  height: 35%;
+}
+.bars i:nth-child(2) {
+  height: 70%;
+}
+.bars i:nth-child(3) {
+  height: 100%;
+}
+.bars i:nth-child(4) {
+  height: 55%;
+}
+.bars i:nth-child(5) {
+  height: 25%;
+}
+
+.masthead nav {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  font-size: 0.85rem;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+.masthead nav a {
+  color: var(--muted);
+  text-decoration: none;
+}
+.masthead nav a:hover {
+  color: var(--ink);
+}
+.masthead nav a.here {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.95rem;
+  line-height: 1;
+}
+.theme-toggle:hover {
+  color: var(--ink);
+  border-color: var(--accent);
+}
+.theme-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.masthead + .wrap {
+  padding-top: 1.5rem;
+}
+
+/* ── empty shelf ─────────────────────────────────────────────────────── */
+
+.empty {
+  margin-top: 1.5rem;
+  padding: 2rem 1.5rem;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  text-align: center;
+  color: var(--muted);
+}
+.empty .bars {
+  height: 1.6rem;
+  margin-bottom: 0.6rem;
+}
+.empty strong {
+  display: block;
+  color: var(--ink);
+  margin-bottom: 0.25rem;
+}

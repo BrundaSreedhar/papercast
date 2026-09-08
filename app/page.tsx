@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   TranscriptPlayer,
@@ -230,10 +229,10 @@ export default function Home() {
 
   return (
     <main className="wrap">
-      <h1>PaperCast</h1>
+      <h1>Turn a paper into an episode</h1>
       <p className="sub">
-        A paper in, an episode out — saying only what the paper says.{" "}
-        <Link href="/library">Library →</Link>
+        Drop in a PDF and get something worth listening to — saying only what the paper
+        says, with every line traceable back to the page it came from.
       </p>
 
       {!running && !summary && (

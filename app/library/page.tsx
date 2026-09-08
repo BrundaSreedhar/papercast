@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { listEpisodes } from "@/lib/library/store";
+import { Bars } from "@/app/components/SiteHeader";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,9 +32,6 @@ export default async function Library() {
 
   return (
     <main className="wrap">
-      <p className="sub">
-        <Link href="/">← New episode</Link>
-      </p>
       <h1>Library</h1>
       <p className="sub">
         {episodes.length === 0
@@ -42,9 +40,17 @@ export default async function Library() {
       </p>
 
       {episodes.length === 0 ? (
-        <p style={{ marginTop: "1.5rem" }}>
-          <Link href="/">Make one →</Link>
-        </p>
+        <div className="empty">
+          <Bars />
+          <strong>No episodes yet</strong>
+          <p style={{ margin: 0 }}>
+            Everything you make lands here — with its transcript, its sources, and
+            somewhere to ask the paper questions.
+          </p>
+          <p style={{ margin: "0.9rem 0 0" }}>
+            <Link href="/">Make your first one →</Link>
+          </p>
+        </div>
       ) : (
         <ul className="shelf">
           {episodes.map((e) => (
