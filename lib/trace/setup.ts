@@ -24,6 +24,7 @@ import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from "./attributes";
 import { setCapturePayloads, setEnabled } from "./tracer";
 import { WaterfallProcessor } from "./waterfall";
+import { LogProcessor } from "./log";
 
 export interface InitOptions {
   serviceName?: string;
@@ -34,6 +35,13 @@ export interface InitOptions {
    */
   waterfall?: boolean;
   capturePayloads?: boolean;
+  /**
+   * Print each span as it finishes, through this sink.
+   *
+   * For a server, where a waterfall never gets rendered and an OTLP collector
+   * is more setup than someone wants in order to see which model was called.
+   */
+  log?: (line: string) => void;
   /** Test seam — extra processors, e.g. an in-memory exporter. */
   processors?: SpanProcessor[];
 }
@@ -67,6 +75,8 @@ export function initTracing(opts: InitOptions = {}): void {
     waterfall = new WaterfallProcessor();
     processors.push(waterfall);
   }
+
+  if (opts.log) processors.push(new LogProcessor(opts.log));
 
   // Only when an endpoint is actually configured. The exporter defaults to
   // http://localhost:4318 when constructed bare, so building it

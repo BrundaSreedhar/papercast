@@ -21,6 +21,8 @@ import type { LLMProvider, Usage } from "../llm/types";
 import { paperToText, type PaperStructure } from "../pdf/extract";
 import { PaperLocator, type Citation } from "../pdf/locate";
 import { retrieveForQuestion } from "./retrieve";
+import { withSpan } from "../trace/index";
+import * as TA from "../trace/attributes";
 
 /**
  * What kind of answer this is.
@@ -141,40 +143,58 @@ export async function askPaper(
   },
 ): Promise<PaperReply> {
   const history = (opts.history ?? []).slice(-HISTORY_TURNS);
-  const selected = opts.retrieve ? retrieveForQuestion(paper, question) : undefined;
+  const selected = opts.retrieve
+    ? await withSpan("retrieve sections", { [TA.PAPERCAST_RETRIEVED]: true }, async () =>
+        retrieveForQuestion(paper, question),
+      )
+    : undefined;
   const context = selected ? selected.text : paperToText(paper);
   const conversation = history
     .map((t) => `${t.role === "user" ? "READER" : "YOU"}: ${t.content}`)
     .join("\n");
 
-  const result = await opts.provider.generateStructured({
-    system: SYSTEM,
-    cacheableContext: `SOURCE PAPER\n\n${context}`,
-    user: conversation
-      ? `Earlier in this conversation:\n${conversation}\n\nThe reader now asks: ${question}`
-      : `The reader asks: ${question}`,
-    schema: PaperAnswerSchema,
-    schemaName: "answer",
-    schemaDescription:
-      "An answer drawn strictly from the provided paper, with supporting quotes.",
-    maxTokens: 2_000,
-    // Answering a question about a document is a lookup, not a performance.
-    temperature: 0.2,
-    ...(opts.onText ? { stream: { field: "answer", onText: opts.onText } } : {}),
-  });
+  return withSpan(
+    "invoke_agent ask-paper",
+    {
+      [TA.GEN_AI_OPERATION_NAME]: "invoke_agent",
+      [TA.GEN_AI_AGENT_NAME]: "ask-paper",
+      // What the model was given, which is the number that explains the wait.
+      [TA.PAPERCAST_CONTEXT_CHARS]: context.length,
+      [TA.PAPERCAST_RETRIEVED]: selected ? !selected.whole : false,
+    },
+    () => answer(),
+  );
 
-  const kind = result.data.kind;
-  // Quotes are only meaningful for a claim about the paper. A background answer
-  // that offered one would be citing the paper for something it never said.
-  const citations = kind === "from-paper" ? locate(paper, result.data.quotes) : [];
-  return {
-    answer: result.data.answer,
-    kind,
-    citations,
-    consulted: selected && !selected.whole ? selected.sections : [],
-    grounded: kind === "from-paper" && citations.length > 0,
-    usage: result.usage,
-  };
+  async function answer(): Promise<PaperReply> {
+    const result = await opts.provider.generateStructured({
+      system: SYSTEM,
+      cacheableContext: `SOURCE PAPER\n\n${context}`,
+      user: conversation
+        ? `Earlier in this conversation:\n${conversation}\n\nThe reader now asks: ${question}`
+        : `The reader asks: ${question}`,
+      schema: PaperAnswerSchema,
+      schemaName: "answer",
+      schemaDescription:
+        "An answer drawn strictly from the provided paper, with supporting quotes.",
+      maxTokens: 2_000,
+      // Answering a question about a document is a lookup, not a performance.
+      temperature: 0.2,
+      ...(opts.onText ? { stream: { field: "answer", onText: opts.onText } } : {}),
+    });
+
+    const kind = result.data.kind;
+    // Quotes are only meaningful for a claim about the paper. A background answer
+    // that offered one would be citing the paper for something it never said.
+    const citations = kind === "from-paper" ? locate(paper, result.data.quotes) : [];
+    return {
+      answer: result.data.answer,
+      kind,
+      citations,
+      consulted: selected && !selected.whole ? selected.sections : [],
+      grounded: kind === "from-paper" && citations.length > 0,
+      usage: result.usage,
+    };
+  }
 }
 
 /**

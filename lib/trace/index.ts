@@ -3,4 +3,5 @@ export { withSpan, isTracingEnabled, capturePayloads, PAYLOAD_MAX_CHARS } from "
 export { traced } from "./llm";
 export { tracedVision } from "./vision";
 export { renderWaterfall, WaterfallProcessor } from "./waterfall";
+export { LogProcessor, formatSpan, type Sink } from "./log";
 export * as attributes from "./attributes";

@@ -14,6 +14,8 @@
 import { chunkForSynthesis } from "./chunk";
 import { joinWavs } from "./wav";
 import type { Speaker, TTSProvider } from "./types";
+import { withSpan } from "../trace/index";
+import * as TA from "../trace/attributes";
 
 export interface SpokenText {
   audio: Buffer;
@@ -35,16 +37,28 @@ export async function speak(
   if (!trimmed) throw new Error("Nothing to say.");
 
   const chunks = chunkForSynthesis(trimmed, provider.maxChars);
-  const parts: Buffer[] = [];
-  for (const chunk of chunks) {
-    parts.push(await provider.synthesizeChunk(chunk, speaker));
-  }
 
-  const joined = joinWavs(parts, GAP_MS);
-  return {
-    audio: joined.wav,
-    format: "wav",
-    totalMs: joined.totalMs,
-    calls: chunks.length,
-  };
+  return withSpan(
+    `speak ${provider.name}`,
+    {
+      [TA.GEN_AI_OPERATION_NAME]: "speak",
+      [TA.GEN_AI_REQUEST_MODEL]: provider.description,
+      // Calls, because that is what a hosted backend bills for.
+      [TA.PAPERCAST_TTS_CALLS]: chunks.length,
+    },
+    async () => {
+      const parts: Buffer[] = [];
+      for (const chunk of chunks) {
+        parts.push(await provider.synthesizeChunk(chunk, speaker));
+      }
+
+      const joined = joinWavs(parts, GAP_MS);
+      return {
+        audio: joined.wav,
+        format: "wav" as const,
+        totalMs: joined.totalMs,
+        calls: chunks.length,
+      };
+    },
+  );
 }

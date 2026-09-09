@@ -9,6 +9,8 @@
  * not reach into the harness, so it moved rather than growing a third caller in
  * the wrong direction.
  */
+import { withSpan } from "../trace/index";
+import * as TA from "../trace/attributes";
 import { execFile } from "node:child_process";
 import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -50,6 +52,19 @@ export class WhisperCppProvider implements ASRProvider {
   }
 
   async transcribe(wav: Buffer): Promise<string> {
+    return withSpan(
+      `transcribe ${this.model.replace(/^.*\//, "")}`,
+      {
+        [TA.GEN_AI_OPERATION_NAME]: "transcribe",
+        [TA.GEN_AI_REQUEST_MODEL]: this.model,
+        // Whisper's cost is the length of the recording, not a token count.
+        [TA.PAPERCAST_AUDIO_SECONDS]: Math.round(wav.length / (16_000 * 2)),
+      },
+      () => this.run(wav),
+    );
+  }
+
+  private async run(wav: Buffer): Promise<string> {
     const dir = await mkdtemp(join(tmpdir(), "papercast-asr-"));
     const input = join(dir, "in.wav");
     const stem = join(dir, "out");

@@ -63,6 +63,12 @@ export const GEN_AI_USAGE_CACHE_WRITE_INPUT_TOKENS =
 /* ── GenAI: agent and workflow ─────────────────────────────────────────── */
 
 export const GEN_AI_AGENT_NAME = "gen_ai.agent.name";
+/** Whether only part of the paper was sent. */
+export const PAPERCAST_RETRIEVED = "papercast.context.retrieved";
+/** Synthesis calls made, which is what a hosted voice bills for. */
+export const PAPERCAST_TTS_CALLS = "papercast.tts.calls";
+/** Seconds of audio a speech operation handled. */
+export const PAPERCAST_AUDIO_SECONDS = "papercast.audio.seconds";
 export const GEN_AI_WORKFLOW_NAME = "gen_ai.workflow.name";
 
 /* ── GenAI: content, captured only when opted in ───────────────────────── */

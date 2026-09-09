@@ -16,6 +16,7 @@ npm run lint                  # eslint
 npm run format                # prettier --write
 
 npm run dev                   # Next.js app on :3000
+TRACE_LOG=1 npm run dev       # ...and print every model call as it finishes
 npm run build:web             # next build — the only thing that typechecks app/
 npm run serve                 # the same pipeline behind Express, on :8000
 npm run generate -- paper.pdf --minutes 4 [--solo|--eli5] [--provider anthropic|openai|gemini|open] [--revise] [--trace]
@@ -39,7 +40,7 @@ framework-free and testable without a network or a filesystem.
 **Four model interfaces carry the system**: `LLMProvider` (`lib/llm/types.ts`),
 `VisionProvider`, `TTSProvider`, `ASRProvider`. Each is one method reached
 through one factory, so a local voice, a hosted API and a frontier model are
-interchangeable. `getProvider()` in `lib/llm/index.ts` is the *only* place an
+interchangeable. `getProvider()` in `lib/llm/index.ts` is the _only_ place an
 LLM provider is constructed, which is why wrapping it in `traced()` instruments
 every inference call in the project without touching a call site.
 
@@ -67,7 +68,7 @@ read as a job still running.
 
 **Citations** (`lib/ground/`, `lib/pdf/locate.ts`) anchor each turn to a section
 and page by lexical matching — no model call, no API key. They resolve against
-the *rendered* paper (`renderPaper` in `lib/pdf/extract.ts`), never the raw PDF
+the _rendered_ paper (`renderPaper` in `lib/pdf/extract.ts`), never the raw PDF
 text, because the raw text still holds the reference list and a quote matching
 inside a bibliography would produce a confident citation to a page nobody read.
 A match below the confidence floor returns nothing: a wrong page is worse than
@@ -132,5 +133,5 @@ particular provider or a paid pass.
 with a test asserting the block is byte-identical — a second format must not
 mean a second standard. Solo and ELI5 episodes are consecutive `narrator` turns,
 so `checkAlternation` reads the format from the speakers rather than a flag,
-which keeps it catching a *collapsed dialogue* (still `host`) as the failure it
+which keeps it catching a _collapsed dialogue_ (still `host`) as the failure it
 was written for.
