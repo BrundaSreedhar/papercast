@@ -30,6 +30,37 @@ const MAX_AUDIO_BYTES = 2 * 1024 * 1024;
  * this machine has no ffmpeg to convert with. Encoding it client-side keeps the
  * recording on the listener's machine until the moment it is transcribed.
  */
+/**
+ * Ways of handing the listener back.
+ *
+ * The answer used to stop and the episode used to start again in the same
+ * instant, which is disorienting when both are the same voice: there is nothing
+ * to tell you the answer ended and the paper resumed. A closing line marks the
+ * seam.
+ *
+ * They rotate because a demo involves asking several questions in a row, and
+ * one line repeated verbatim each time stops sounding like speech.
+ */
+const RETURNS = [
+  "Right, back to the episode.",
+  "Now, back to where we were.",
+  "Let us get back to the episode.",
+];
+
+/**
+ * The answer as it will be spoken.
+ *
+ * Only the spoken form gets the closing line: the text on screen is the answer
+ * to the question, and a sentence about returning to audio would be noise in
+ * it. And it is only added when the episode is actually going to start again —
+ * someone who paused to think and then asked is not being returned anywhere.
+ */
+function spokenAnswer(answer: string, resuming: boolean): string {
+  if (!resuming) return answer;
+  const line = RETURNS[Math.floor(Math.random() * RETURNS.length)]!;
+  return `${answer.trim()} ${line}`;
+}
+
 /** The most accurate model actually present, for a short spoken question. */
 async function questionModel(): Promise<string | undefined> {
   if (process.env.WHISPER_MODEL) return process.env.WHISPER_MODEL;
@@ -104,7 +135,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     let audioUrl: string | undefined;
     try {
       const tts = await resolveTTSProvider();
-      const said = await speak(reply.answer, tts);
+      const said = await speak(
+        spokenAnswer(reply.answer, form?.get("resuming") === "true"),
+        tts,
+      );
       const name = `answer-${randomUUID()}.wav`;
       await mkdir(AUDIO_DIR, { recursive: true });
       await writeFile(join(AUDIO_DIR, name), said.audio);

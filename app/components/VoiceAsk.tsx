@@ -37,13 +37,19 @@ type Phase = "idle" | "listening" | "thinking" | "answering";
  */
 export function VoiceAsk({
   episodeId,
-  onPause = () => {},
+  onPause = () => false,
   onResume = () => {},
   pausesPlayback = true,
 }: {
   episodeId: string;
-  /** Pause the episode. Returns nothing; the player keeps its own position. */
-  onPause?: () => void;
+  /**
+   * Pause the episode, reporting whether anything was playing.
+   *
+   * The answer ends by saying it is going back to the episode, and it should
+   * only say that when the episode is going to start again — someone who
+   * paused to think and then asked is not being returned anywhere.
+   */
+  onPause?: () => boolean;
   onResume?: () => void;
   /** False for a transcript-only episode, where there is nothing to pause. */
   pausesPlayback?: boolean;
@@ -52,6 +58,7 @@ export function VoiceAsk({
   const [reply, setReply] = useState<Reply | null>(null);
   const [error, setError] = useState<{ message: string; remedy?: string } | null>(null);
   const recorder = useRef<Recorder | null>(null);
+  const willResume = useRef(false);
   const answerAudio = useRef<HTMLAudioElement | null>(null);
 
   async function begin() {
@@ -59,7 +66,7 @@ export function VoiceAsk({
     setReply(null);
     try {
       recorder.current = await startRecording();
-      onPause();
+      willResume.current = onPause();
       setPhase("listening");
     } catch {
       setError({
@@ -79,6 +86,7 @@ export function VoiceAsk({
       const wav = await rec.stop();
       const body = new FormData();
       body.set("audio", wav, "question.wav");
+      body.set("resuming", String(willResume.current));
 
       const res = await fetch(`/api/library/${episodeId}/ask-voice`, {
         method: "POST",

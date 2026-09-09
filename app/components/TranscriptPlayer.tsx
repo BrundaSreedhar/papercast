@@ -114,11 +114,13 @@ export function TranscriptPlayer({
    * episode up on its own.
    */
   const wasPlaying = useRef(false);
+  /** Pauses, and reports whether there was anything to pause. */
   const pauseForQuestion = () => {
     const audio = audioRef.current;
-    if (!audio) return;
+    if (!audio) return false;
     wasPlaying.current = !audio.paused;
     audio.pause();
+    return wasPlaying.current;
   };
   const resumeAfterQuestion = () => {
     const audio = audioRef.current;
