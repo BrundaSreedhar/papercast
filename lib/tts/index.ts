@@ -19,7 +19,9 @@ export function getTTSProvider(name?: TTSProviderName): TTSProvider {
     case "say":
       return new MacSayProvider();
     default:
-      throw new Error(`Unknown TTS provider "${chosen}". Use "piper", "say", or "openai".`);
+      throw new Error(
+        `Unknown TTS provider "${chosen}". Use "piper", "say", or "openai".`,
+      );
   }
 }
 
@@ -40,6 +42,12 @@ export async function resolveTTSProvider(name?: TTSProviderName): Promise<TTSPro
   return new MacSayProvider();
 }
 
-export { MacSayProvider, macSayAvailable, OpenAITTSProvider, PiperProvider, piperAvailable };
+export {
+  MacSayProvider,
+  macSayAvailable,
+  OpenAITTSProvider,
+  PiperProvider,
+  piperAvailable,
+};
 export { synthesizeEpisode } from "./synthesize";
 export type { EpisodeAudio, TTSProvider, TurnTiming } from "./types";

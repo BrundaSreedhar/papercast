@@ -37,8 +37,10 @@ export interface RenderedPage {
 /** Text of a single page, used to decide whether it is worth rendering. */
 export async function pageText(pdfPath: string, page: number): Promise<string> {
   const { stdout } = await run("pdftotext", [
-    "-f", String(page),
-    "-l", String(page),
+    "-f",
+    String(page),
+    "-l",
+    String(page),
     pdfPath,
     "-",
   ]);
@@ -95,9 +97,12 @@ export async function renderPages(
       const stem = join(dir, `p${page}`);
       await run("pdftoppm", [
         "-png",
-        "-r", String(dpi),
-        "-f", String(page),
-        "-l", String(page),
+        "-r",
+        String(dpi),
+        "-f",
+        String(page),
+        "-l",
+        String(page),
         pdfPath,
         stem,
       ]);
@@ -105,7 +110,8 @@ export async function renderPages(
       const produced = (await readdir(dir)).find(
         (f) => f.startsWith(`p${page}-`) && f.endsWith(".png"),
       );
-      if (produced) out.push({ page, png: await readFile(join(dir, produced)), captions });
+      if (produced)
+        out.push({ page, png: await readFile(join(dir, produced)), captions });
     }
     return out;
   } finally {

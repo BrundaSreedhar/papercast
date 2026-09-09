@@ -1,13 +1,13 @@
 /**
- * Transcribing generated audio back to text.
+ * Transcription: turning speech back into text.
  *
- * The audio checks measure duration against word count, which is a proxy: a
- * turn whose audio is far too short probably lost text. This closes that gap by
- * asking what the audio actually says. It is the difference between inferring
- * that something went missing and demonstrating it.
- *
- * Deliberately behind an interface, like every other model in this project, so
- * the recognizer can be swapped without touching the metric.
+ * This lived under `lib/eval/` because its first job was checking synthesized
+ * audio against the script it came from. That was always a misfiling — reading
+ * speech is a capability, not a measurement — and it became load-bearing when
+ * the pipeline started importing it, then again when a listener could ask a
+ * question out loud. The harness may depend on production code; production must
+ * not reach into the harness, so it moved rather than growing a third caller in
+ * the wrong direction.
  */
 import { execFile } from "node:child_process";
 import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -56,12 +56,16 @@ export class WhisperCppProvider implements ASRProvider {
     try {
       await writeFile(input, wav);
       await run(this.binary, [
-        "-m", this.model,
-        "-f", input,
-        "-t", String(this.threads),
+        "-m",
+        this.model,
+        "-f",
+        input,
+        "-t",
+        String(this.threads),
         "--no-timestamps",
         "--output-txt",
-        "-of", stem,
+        "-of",
+        stem,
       ]);
       return (await readFile(`${stem}.txt`, "utf8")).trim();
     } finally {

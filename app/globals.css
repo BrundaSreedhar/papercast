@@ -18,8 +18,15 @@
   --radius: 10px;
 }
 
+/*
+ * Three states, not two. A reader who has chosen light or dark gets that
+ * choice; a reader who has chosen nothing follows the system. So the dark
+ * palette is written twice — once behind the media query, guarded so an
+ * explicit light choice beats a dark OS, and once behind the attribute, so the
+ * toggle wins in the other direction too.
+ */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #141414;
     --surface: #1c1c1c;
     --ink: #ececec;
@@ -34,17 +41,41 @@
   }
 }
 
-* { box-sizing: border-box; }
+:root[data-theme="dark"] {
+  --bg: #141414;
+  --surface: #1c1c1c;
+  --ink: #ececec;
+  --muted: #a0a0a0;
+  --faint: #6f6f6f;
+  --line: #2c2c2c;
+  --host: #5fbfa3;
+  --guest: #c79ad4;
+  --accent: #5fbfa3;
+  --active-bg: #172723;
+  --error: #e08a76;
+}
+
+* {
+  box-sizing: border-box;
+}
 
 body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
-  font: 16px/1.65 ui-serif, Georgia, "Times New Roman", serif;
+  font:
+    16px/1.65 ui-serif,
+    Georgia,
+    "Times New Roman",
+    serif;
   -webkit-font-smoothing: antialiased;
 }
 
-.wrap { max-width: 46rem; margin: 0 auto; padding: 3rem 1.25rem 6rem; }
+.wrap {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 3rem 1.25rem 6rem;
+}
 
 h1 {
   font-size: 1.6rem;
@@ -52,7 +83,11 @@ h1 {
   margin: 0 0 0.25rem;
 }
 
-.sub { color: var(--muted); margin: 0 0 2rem; font-size: 0.95rem; }
+.sub {
+  color: var(--muted);
+  margin: 0 0 2rem;
+  font-size: 0.95rem;
+}
 
 .card {
   background: var(--surface);
@@ -68,12 +103,24 @@ h1 {
   padding: 2.5rem 1.25rem;
   text-align: center;
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
   background: var(--surface);
 }
-.drop:hover, .drop.over { border-color: var(--accent); background: var(--active-bg); }
-.drop strong { display: block; margin-bottom: 0.35rem; }
-.drop span { color: var(--muted); font-size: 0.9rem; }
+.drop:hover,
+.drop.over {
+  border-color: var(--accent);
+  background: var(--active-bg);
+}
+.drop strong {
+  display: block;
+  margin-bottom: 0.35rem;
+}
+.drop span {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
 
 .controls {
   display: flex;
@@ -84,8 +131,14 @@ h1 {
   font-size: 0.9rem;
   font-family: ui-sans-serif, system-ui, sans-serif;
 }
-.controls label { display: flex; gap: 0.4rem; align-items: center; color: var(--muted); }
-select, input[type="number"] {
+.controls label {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  color: var(--muted);
+}
+select,
+input[type="number"] {
   font: inherit;
   padding: 0.3rem 0.45rem;
   border: 1px solid var(--line);
@@ -104,29 +157,75 @@ button {
   padding: 0.55rem 1.1rem;
   cursor: pointer;
 }
-button:disabled { opacity: 0.5; cursor: default; }
-button.ghost { background: transparent; color: var(--accent); border: 1px solid var(--line); }
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+button.ghost {
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--line);
+}
 
 /* ---- progress ---- */
-.stages { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 1rem; }
+.stages {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
 .stage {
-  display: flex; align-items: center; gap: 0.6rem;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
   font-family: ui-sans-serif, system-ui, sans-serif;
-  font-size: 0.88rem; color: var(--faint);
+  font-size: 0.88rem;
+  color: var(--faint);
 }
-.stage.active { color: var(--ink); }
-.stage.complete { color: var(--muted); }
+.stage.active {
+  color: var(--ink);
+}
+.stage.complete {
+  color: var(--muted);
+}
 .dot {
-  width: 0.5rem; height: 0.5rem; border-radius: 50%;
-  background: var(--line); flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--line);
+  flex: none;
 }
-.stage.active .dot { background: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
-.stage.complete .dot { background: var(--accent); }
-@keyframes pulse { 50% { opacity: 0.35; } }
-@media (prefers-reduced-motion: reduce) { .stage.active .dot { animation: none; } }
+.stage.active .dot {
+  background: var(--accent);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+.stage.complete .dot {
+  background: var(--accent);
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .stage.active .dot {
+    animation: none;
+  }
+}
 
-.bar { height: 3px; background: var(--line); border-radius: 2px; overflow: hidden; margin-top: 1rem; }
-.bar > i { display: block; height: 100%; background: var(--accent); transition: width 0.4s ease; }
+.bar {
+  height: 3px;
+  background: var(--line);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 1rem;
+}
+.bar > i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.4s ease;
+}
 
 /* ---- transcript ---- */
 .turn {
@@ -139,9 +238,15 @@ button.ghost { background: transparent; color: var(--accent); border: 1px solid 
   transition: background 0.2s;
   scroll-margin-top: 6rem;
 }
-.turn:hover { background: var(--active-bg); }
-.turn.active { background: var(--active-bg); }
-.turn.active .who::after { content: " ▸"; }
+.turn:hover {
+  background: var(--active-bg);
+}
+.turn.active {
+  background: var(--active-bg);
+}
+.turn.active .who::after {
+  content: " ▸";
+}
 .who {
   font-family: ui-sans-serif, system-ui, sans-serif;
   font-size: 0.7rem;
@@ -150,26 +255,78 @@ button.ghost { background: transparent; color: var(--accent); border: 1px solid 
   padding-top: 0.28rem;
   color: var(--host);
 }
-.turn[data-speaker="guest"] .who { color: var(--guest); }
-.turn p { margin: 0; }
-.turn.past p { color: var(--muted); }
+.turn[data-speaker="guest"] .who {
+  color: var(--guest);
+}
+.turn[data-speaker="narrator"] .who {
+  color: var(--host);
+}
+.turn p {
+  margin: 0;
+}
+.turn.past p {
+  color: var(--muted);
+}
+
+/*
+ * The reference sits under the turn it belongs to, in the text column rather
+ * than beside the speaker label. Quiet by default: it is there to be checked
+ * when a listener wonders where a claim came from, not to compete with the
+ * words being spoken.
+ */
+.turn .cite {
+  grid-column: 2;
+  margin-top: 0.3rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  cursor: help;
+}
+.turn.active .cite {
+  color: var(--host);
+}
+/* Marks a reference found by paraphrase rather than wording, so a reader can
+   weigh it accordingly instead of assuming every one is verbatim. */
+.cite-approx {
+  opacity: 0.7;
+}
 
 .player {
-  position: sticky; top: 0; z-index: 2;
+  position: sticky;
+  top: 0;
+  z-index: 2;
   background: var(--bg);
   padding: 1rem 0;
   border-bottom: 1px solid var(--line);
   margin-bottom: 0.5rem;
 }
-audio { width: 100%; }
+/* The element itself is only the engine now; the transport below is the UI. */
+audio {
+  display: none;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 
 .meta {
-  display: flex; gap: 1.25rem; flex-wrap: wrap;
+  display: flex;
+  gap: 1.25rem;
+  flex-wrap: wrap;
   font-family: ui-sans-serif, system-ui, sans-serif;
-  font-size: 0.8rem; color: var(--muted);
+  font-size: 0.8rem;
+  color: var(--muted);
   margin-top: 0.6rem;
 }
-.meta b { color: var(--ink); font-weight: 600; }
+.meta b {
+  color: var(--ink);
+  font-weight: 600;
+}
 
 .err {
   border-left: 3px solid var(--error);
@@ -179,10 +336,17 @@ audio { width: 100%; }
   font-family: ui-sans-serif, system-ui, sans-serif;
   font-size: 0.9rem;
 }
-.err strong { color: var(--error); display: block; margin-bottom: 0.25rem; }
+.err strong {
+  color: var(--error);
+  display: block;
+  margin-bottom: 0.25rem;
+}
 
 /* ---- the demo shelf ---- */
-.papers { display: grid; gap: 0.6rem; }
+.papers {
+  display: grid;
+  gap: 0.6rem;
+}
 .paper {
   display: block;
   width: 100%;
@@ -193,18 +357,33 @@ audio { width: 100%; }
   border-radius: var(--radius);
   padding: 0.9rem 1rem;
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
 }
-.paper:hover { border-color: var(--accent); background: var(--active-bg); }
-.paper.chosen { border-color: var(--accent); background: var(--active-bg); }
-.paper strong { display: block; font-weight: 600; margin-bottom: 0.2rem; }
+.paper:hover {
+  border-color: var(--accent);
+  background: var(--active-bg);
+}
+.paper.chosen {
+  border-color: var(--accent);
+  background: var(--active-bg);
+}
+.paper strong {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 0.2rem;
+}
 .paper span {
   display: block;
   color: var(--muted);
   font-family: ui-sans-serif, system-ui, sans-serif;
   font-size: 0.82rem;
 }
-.paper .who-wrote { color: var(--faint); margin-bottom: 0.25rem; }
+.paper .who-wrote {
+  color: var(--faint);
+  margin-bottom: 0.25rem;
+}
 
 .note {
   color: var(--muted);
@@ -212,4 +391,850 @@ audio { width: 100%; }
   font-size: 0.82rem;
   line-height: 1.6;
   margin: 1rem 0 0;
+}
+
+/* ── the library ─────────────────────────────────────────────────────── */
+
+.shelf {
+  list-style: none;
+  margin: 1.5rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.6rem;
+}
+.shelf-item {
+  display: block;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: inherit;
+  text-decoration: none;
+  transition:
+    border-color 0.2s,
+    background 0.2s;
+}
+.shelf-item:hover {
+  border-color: var(--accent);
+  background: var(--active-bg);
+}
+.shelf-item strong {
+  display: block;
+  line-height: 1.35;
+}
+.shelf-meta,
+.shelf-score {
+  display: block;
+  margin-top: 0.3rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.shelf-score {
+  color: var(--accent);
+}
+
+/* ── asking the paper ────────────────────────────────────────────────── */
+
+.chat {
+  margin-top: 2rem;
+}
+.chat h2 {
+  margin: 0 0 0.2rem;
+  font-size: 1.05rem;
+}
+.exchange {
+  margin-top: 1.2rem;
+  padding-top: 1.2rem;
+  border-top: 1px solid var(--line);
+}
+.exchange .q {
+  margin: 0 0 0.5rem;
+  font-weight: 600;
+}
+.exchange .a {
+  margin: 0;
+}
+.exchange .err-text {
+  color: var(--error);
+}
+/* Sources are the evidence, so they sit with the answer rather than below the
+   fold — quiet, but never hidden behind an expander. */
+.sources {
+  margin: 0.4rem 0 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+  cursor: help;
+}
+.ask {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1.2rem;
+}
+.ask input {
+  flex: 1;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.92rem;
+}
+.ask input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.ask button {
+  padding: 0.6rem 1rem;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: var(--bg);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ask button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+/* An answer asserting something about the paper with nothing found to back it
+   is the failure mode worth interrupting a reader over, so it is not grey. */
+.sources.unsupported {
+  color: var(--error);
+  cursor: default;
+}
+
+/* ── asking out loud ─────────────────────────────────────────────────── */
+
+.voice {
+  margin-top: 0.75rem;
+}
+.voice-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.voice-btn:hover {
+  border-color: var(--accent);
+}
+.voice-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.voice-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--faint);
+  flex: 0 0 auto;
+}
+.voice-btn.recording {
+  border-color: var(--error);
+}
+.voice-btn.recording .voice-dot {
+  background: var(--error);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.25;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .voice-btn.recording .voice-dot {
+    animation: none;
+  }
+}
+.voice-hint {
+  margin-left: 0.6rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.voice-error {
+  margin: 0.6rem 0 0;
+  font-size: 0.85rem;
+  color: var(--error);
+}
+.voice-reply {
+  margin-top: 0.8rem;
+  padding: 0.75rem 0.9rem;
+  border-left: 2px solid var(--accent);
+  background: var(--active-bg);
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+.voice-reply .q {
+  margin: 0 0 0.4rem;
+  font-style: italic;
+  color: var(--muted);
+}
+.voice-reply .a {
+  margin: 0;
+}
+
+/* ── the masthead ────────────────────────────────────────────────────── */
+
+.masthead {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--line);
+}
+.masthead-inner {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 0.7rem 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+.wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: inherit;
+  text-decoration: none;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin-right: auto;
+}
+.wordmark:hover .bars i {
+  background: var(--accent);
+}
+
+/* Five bars at the heights of a spoken syllable, not a random scatter. */
+.bars {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 1.1em;
+}
+.bars i {
+  display: block;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--faint);
+  transition: background 0.2s;
+}
+.bars i:nth-child(1) {
+  height: 35%;
+}
+.bars i:nth-child(2) {
+  height: 70%;
+}
+.bars i:nth-child(3) {
+  height: 100%;
+}
+.bars i:nth-child(4) {
+  height: 55%;
+}
+.bars i:nth-child(5) {
+  height: 25%;
+}
+
+.masthead nav {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  font-size: 0.85rem;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+.masthead nav a {
+  color: var(--muted);
+  text-decoration: none;
+}
+.masthead nav a:hover {
+  color: var(--ink);
+}
+.masthead nav a.here {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.95rem;
+  line-height: 1;
+}
+.theme-toggle:hover {
+  color: var(--ink);
+  border-color: var(--accent);
+}
+.theme-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.masthead + .wrap {
+  padding-top: 1.5rem;
+}
+
+/* ── empty shelf ─────────────────────────────────────────────────────── */
+
+.empty {
+  margin-top: 1.5rem;
+  padding: 2rem 1.5rem;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  text-align: center;
+  color: var(--muted);
+}
+.empty .bars {
+  height: 1.6rem;
+  margin-bottom: 0.6rem;
+}
+.empty strong {
+  display: block;
+  color: var(--ink);
+  margin-bottom: 0.25rem;
+}
+
+/* A background answer is useful and is not from the paper, and a reader has to
+   be able to tell at a glance which of the two they are reading. */
+.kind {
+  margin: 0 0 0.35rem;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--guest);
+}
+
+/* Destructive, so it sits quietly until it is wanted and turns red only once
+   it is armed and the next click really does remove something. */
+/* Sits in the crumb row now, so it no longer floats over what follows it. */
+.delete {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.delete-btn {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--faint);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.delete-btn:hover {
+  color: var(--ink);
+}
+.delete-btn.confirm {
+  color: var(--error);
+  font-weight: 600;
+}
+.delete-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.delete-error {
+  font-size: 0.8rem;
+  color: var(--error);
+}
+
+/* ── the episode summary ─────────────────────────────────────────────── */
+
+.summary {
+  margin-top: 1.5rem;
+}
+.summary h2 {
+  margin: 0 0 0.5rem;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.summary p {
+  margin: 0;
+}
+.key-points {
+  margin: 0.9rem 0 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.94rem;
+  color: var(--muted);
+}
+.key-points::marker {
+  color: var(--accent);
+}
+.key-points li::marker {
+  color: var(--accent);
+}
+
+/* Three lines on a card: enough to tell two episodes about the same paper
+   apart, not so much that the shelf stops being scannable. */
+.shelf-summary {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-top: 0.35rem;
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+
+/* ── crumbs ──────────────────────────────────────────────────────────── */
+
+/* The back link and the destructive action share a row, so the eye finds both
+   in one place instead of one floating over the other. */
+.crumbs {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.7rem 0.3rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  text-decoration: none;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.82rem;
+  transition:
+    color 0.15s,
+    border-color 0.15s;
+}
+.back:hover {
+  color: var(--ink);
+  border-color: var(--accent);
+}
+.back svg {
+  transition: transform 0.15s;
+}
+.back:hover svg {
+  transform: translateX(-2px);
+}
+.back:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ── the collapsed summary ───────────────────────────────────────────── */
+
+.summary {
+  padding: 0;
+}
+.summary > summary {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.summary > summary::-webkit-details-marker {
+  display: none;
+}
+.summary > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: var(--radius);
+}
+.summary-label {
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.75rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.summary-hint {
+  font-size: 0.8rem;
+  color: var(--faint);
+  margin-right: auto;
+}
+/* The chevron is the affordance, so it turns rather than swapping glyph. */
+.summary > summary::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-right: 1.6px solid var(--faint);
+  border-bottom: 1.6px solid var(--faint);
+  transform: rotate(45deg) translate(-2px, -2px);
+  transition: transform 0.2s;
+}
+.summary[open] > summary::after {
+  transform: rotate(-135deg) translate(-2px, -2px);
+}
+.summary[open] > summary {
+  border-bottom: 1px solid var(--line);
+}
+.summary > p {
+  margin: 0;
+  padding: 0.9rem 1rem 0;
+}
+.summary .key-points {
+  padding: 0.2rem 1rem 1rem 2.1rem;
+  margin: 0.6rem 0 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .back svg,
+  .summary > summary::after {
+    transition: none;
+  }
+}
+
+/* ── the transport ───────────────────────────────────────────────────── */
+
+.transport {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+
+.play {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--bg);
+  cursor: pointer;
+  transition: transform 0.12s;
+}
+.play:hover {
+  transform: scale(1.06);
+}
+.play:active {
+  transform: scale(0.96);
+}
+.play:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.clock {
+  font-size: 0.76rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  flex: 0 0 auto;
+}
+.clock.remaining {
+  color: var(--faint);
+}
+
+/* The bar is three layers: the turn marks, the played portion, and a real
+   range input on top that carries every interaction. */
+.scrub {
+  position: relative;
+  flex: 1 1 auto;
+  height: 1.6rem;
+  display: flex;
+  align-items: center;
+}
+.scrub::before {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--line);
+}
+.filled {
+  position: absolute;
+  left: 0;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--accent);
+  pointer-events: none;
+}
+/* Where each turn begins, so the bar shows the shape of the conversation. */
+.ticks {
+  position: absolute;
+  inset-inline: 0;
+  height: 5px;
+  pointer-events: none;
+}
+.ticks i {
+  position: absolute;
+  top: -2px;
+  width: 1px;
+  height: 9px;
+  background: var(--bg);
+  opacity: 0.85;
+}
+.scrub input[type="range"] {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  margin: 0;
+  background: none;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+.scrub input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
+}
+.scrub input[type="range"]::-moz-range-thumb {
+  width: 13px;
+  height: 13px;
+  border: 2px solid var(--bg);
+  border-radius: 50%;
+  background: var(--accent);
+}
+.scrub input[type="range"]::-webkit-slider-runnable-track {
+  background: none;
+}
+.scrub input[type="range"]::-moz-range-track {
+  background: none;
+}
+.scrub input[type="range"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.speed select {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.76rem;
+  padding: 0.2rem 0.4rem;
+  cursor: pointer;
+}
+.speed select:hover {
+  color: var(--ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .play {
+    transition: none;
+  }
+}
+
+/* ── the concept map ─────────────────────────────────────────────────── */
+
+.graph {
+  margin-top: 1.5rem;
+}
+.graph-svg {
+  width: 100%;
+  max-width: 40rem;
+  margin: 0 auto;
+  display: block;
+  overflow: visible;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+
+.edge {
+  stroke: var(--line);
+  opacity: 0.5;
+  transition:
+    opacity 0.15s,
+    stroke 0.15s;
+}
+.edge.lit {
+  opacity: 0.85;
+}
+.node {
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.node.dimmed {
+  opacity: 0.22;
+}
+.dot {
+  fill: var(--surface);
+  stroke: var(--faint);
+  stroke-width: 1.5;
+}
+.dot.shared {
+  fill: var(--accent);
+  stroke: var(--accent);
+}
+.label {
+  font-size: 12px;
+  fill: var(--muted);
+}
+.label.shared {
+  fill: var(--ink);
+  font-weight: 600;
+}
+.node:hover .label {
+  fill: var(--ink);
+}
+
+.graph-detail {
+  min-height: 2.6rem;
+  margin-top: 0.5rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.graph-detail strong {
+  color: var(--ink);
+}
+.graph-detail span {
+  color: var(--muted);
+}
+
+.section-label {
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin: 0 0 0.6rem;
+}
+.concept-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+.concept-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: baseline;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--line);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.85rem;
+}
+.concept-term {
+  color: var(--ink);
+}
+.concept-term.shared {
+  color: var(--accent);
+  font-weight: 600;
+}
+.concept-episodes {
+  color: var(--muted);
+  margin-left: auto;
+  text-align: right;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .edge,
+  .node {
+    transition: none;
+  }
+}
+
+/* ── what you get ────────────────────────────────────────────────────── */
+
+/* Three claims, each one a thing the product actually does rather than an
+   adjective about it. */
+.pitch {
+  list-style: none;
+  margin: 0.9rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.1rem;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+/* A tick before each, so three claims read as a list without three boxes. */
+.pitch li::before {
+  content: "✓";
+  margin-right: 0.35rem;
+  color: var(--accent);
+}
+
+/* A toggle that costs time or money says so, next to itself. */
+.controls .toggle {
+  align-items: flex-start;
+  gap: 0.45rem;
+}
+.controls .toggle input {
+  margin-top: 0.15rem;
+}
+.controls .toggle em {
+  display: block;
+  font-style: normal;
+  font-size: 0.72rem;
+  color: var(--faint);
+}
+
+/* ── pick up where you left off ──────────────────────────────────────── */
+
+.recent {
+  margin-top: 2.5rem;
+}
+.recent ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+.recent li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.85rem;
+}
+.recent li a {
+  color: var(--ink);
+  text-decoration: none;
+}
+.recent li a:hover {
+  color: var(--accent);
+}
+.recent li span {
+  margin-left: auto;
+  color: var(--faint);
+  font-size: 0.76rem;
+  white-space: nowrap;
 }

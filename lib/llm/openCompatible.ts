@@ -1,8 +1,9 @@
 import OpenAI from "openai";
 import { ZodError } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
-import { openConfig } from "../config/env";
+import { openConfig, type ProviderName } from "../config/env";
 import { assertNoSilentTruncation } from "./contextGuard";
+import { partialString } from "./partial";
 import { joinCacheableContext } from "./promptParts";
 import type { LLMProvider, StructuredRequest, StructuredResult, Usage } from "./types";
 import { capturePayloads, truncate, withSpanFor } from "../trace/tracer";
@@ -26,14 +27,30 @@ type Attempt<T> = { ok: true; data: T } | { ok: false; error: unknown; content: 
  * on failure. That coercion + validation-retry loop is what makes an open model
  * a first-class citizen next to Claude and GPT.
  */
+/** Everything this adapter needs to talk to an endpoint. */
+export interface OpenCompatibleConfig {
+  baseURL: string;
+  apiKey: string;
+  model: string;
+}
+
 export class OpenCompatibleProvider implements LLMProvider {
-  readonly name = "open" as const;
+  readonly name: ProviderName;
   readonly model: string;
   private client: OpenAI;
 
-  constructor() {
-    const cfg = openConfig();
-    this.client = new OpenAI({ apiKey: cfg.apiKey, baseURL: cfg.baseURL });
+  /**
+   * Defaults to the self-hosted `open` endpoint. Anything else that speaks the
+   * OpenAI protocol — Gemini's compatibility layer, Together, Groq — passes its
+   * own name and config and reuses every line below it.
+   */
+  constructor(name: ProviderName = "open", cfg: OpenCompatibleConfig = openConfig()) {
+    this.name = name;
+    // The SDK retries 429s and 5xx on its own; the default of two attempts is
+    // thin for endpoints that fail under load. A job here is minutes of work
+    // and a real bill, so losing it to one bad minute at the provider is a
+    // worse trade than waiting a few more seconds.
+    this.client = new OpenAI({ apiKey: cfg.apiKey, baseURL: cfg.baseURL, maxRetries: 4 });
     this.model = cfg.model;
   }
 
@@ -137,6 +154,7 @@ ${JSON.stringify(jsonSchema)}`;
       max_tokens: req.maxTokens ?? 8000,
       temperature: req.temperature ?? 0.4,
     };
+    if (req.stream) return this.streamed(body, req.stream);
     try {
       return await this.client.chat.completions.create({
         ...body,
@@ -146,6 +164,64 @@ ${JSON.stringify(jsonSchema)}`;
       // Some endpoints/models don't support response_format — degrade gracefully.
       return await this.client.chat.completions.create(body);
     }
+  }
+
+  /**
+   * The same call, read as it arrives, reporting one field's prose as it grows.
+   *
+   * The result is assembled into the shape a non-streaming call returns, so
+   * everything downstream — validation, the retry that feeds a parse error
+   * back, usage accounting — is the code that already existed. Streaming
+   * changes when the caller hears about the text, not what is finally checked.
+   */
+  private async streamed(
+    body: OpenAI.Chat.ChatCompletionCreateParamsNonStreaming,
+    stream: NonNullable<StructuredRequest<unknown>["stream"]>,
+  ): Promise<OpenAI.Chat.ChatCompletion> {
+    const completion = await this.client.chat.completions.create({
+      ...body,
+      response_format: { type: "json_object" },
+      stream: true,
+      stream_options: { include_usage: true },
+    });
+
+    let content = "";
+    let shown = "";
+    let usage: OpenAI.CompletionUsage | undefined;
+    let finish: string | null = null;
+
+    for await (const chunk of completion) {
+      if (chunk.usage) usage = chunk.usage;
+      const choice = chunk.choices[0];
+      if (choice?.finish_reason) finish = choice.finish_reason;
+      const delta = choice?.delta?.content;
+      if (!delta) continue;
+      content += delta;
+
+      // Only report when the visible text actually grew: most chunks land
+      // inside the JSON scaffolding around the field and change nothing.
+      const soFar = partialString(content, stream.field);
+      if (soFar !== undefined && soFar !== shown) {
+        shown = soFar;
+        stream.onText(soFar);
+      }
+    }
+
+    return {
+      id: "streamed",
+      object: "chat.completion",
+      created: Math.floor(Date.now() / 1000),
+      model: this.model,
+      choices: [
+        {
+          index: 0,
+          message: { role: "assistant", content, refusal: null },
+          finish_reason: (finish ?? "stop") as "stop",
+          logprobs: null,
+        },
+      ],
+      ...(usage ? { usage } : {}),
+    };
   }
 }
 

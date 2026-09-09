@@ -72,15 +72,23 @@ describe("checkExpectation", () => {
   });
 
   it("treats an empty expectation as always satisfied", () => {
-    expect(checkExpectation({}, { faithfulness: 0, deterministicErrors: 99 })).toEqual([]);
+    expect(checkExpectation({}, { faithfulness: 0, deterministicErrors: 99 })).toEqual(
+      [],
+    );
   });
 
   it("accepts a score exactly on the boundary", () => {
     expect(
-      checkExpectation({ minFaithfulness: 0.8 }, { faithfulness: 0.8, deterministicErrors: 0 }),
+      checkExpectation(
+        { minFaithfulness: 0.8 },
+        { faithfulness: 0.8, deterministicErrors: 0 },
+      ),
     ).toEqual([]);
     expect(
-      checkExpectation({ maxFaithfulness: 0.3 }, { faithfulness: 0.3, deterministicErrors: 0 }),
+      checkExpectation(
+        { maxFaithfulness: 0.3 },
+        { faithfulness: 0.3, deterministicErrors: 0 },
+      ),
     ).toEqual([]);
   });
 });

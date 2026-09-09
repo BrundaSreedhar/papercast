@@ -10,7 +10,8 @@ export function getVisionProvider(name?: VisionProviderName): VisionProvider {
 }
 
 function buildVision(name?: VisionProviderName): VisionProvider {
-  const chosen = name ?? (process.env.VISION_PROVIDER as VisionProviderName) ?? "anthropic";
+  const chosen =
+    name ?? (process.env.VISION_PROVIDER as VisionProviderName) ?? "anthropic";
   switch (chosen) {
     case "anthropic":
       return new AnthropicVisionProvider();

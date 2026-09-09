@@ -7,11 +7,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { zodToJsonSchema } from "zod-to-json-schema";
-import {
-  ClaimExtractionSchema,
-  CoverageSchema,
-  VerificationSchema,
-} from "./judgeSchema";
+import { ClaimExtractionSchema, CoverageSchema, VerificationSchema } from "./judgeSchema";
 
 type JsonSchema = {
   type?: string;
@@ -68,7 +64,9 @@ describe("judge schemas validate the shapes the judge relies on", () => {
   it("accepts a verdict list and rejects an unknown verdict value", () => {
     expect(
       VerificationSchema.safeParse({
-        verdicts: [{ claimIndex: 0, verdict: "supported", evidence: "q", specific: true }],
+        verdicts: [
+          { claimIndex: 0, verdict: "supported", evidence: "q", specific: true },
+        ],
       }).success,
     ).toBe(true);
     expect(
@@ -87,7 +85,9 @@ describe("judge schemas validate the shapes the judge relies on", () => {
     ).toBe(false);
     expect(
       VerificationSchema.safeParse({
-        verdicts: [{ claimIndex: 0, verdict: "unsupported", evidence: "", specific: false }],
+        verdicts: [
+          { claimIndex: 0, verdict: "unsupported", evidence: "", specific: false },
+        ],
       }).success,
     ).toBe(true);
   });

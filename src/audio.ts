@@ -16,7 +16,7 @@ import { EpisodeSchema, type Episode } from "../lib/llm/schema";
 import { sliceWav } from "../lib/tts/wav";
 import { resolveTTSProvider, synthesizeEpisode, type TTSProviderName } from "../lib/tts/index";
 import { runAudioChecks } from "../lib/eval/audioChecks";
-import { WhisperCppProvider, whisperAvailable } from "../lib/eval/asr";
+import { WhisperCppProvider, whisperAvailable } from "../lib/asr/index";
 import { fidelityCheck, verifyPerTurn } from "../lib/eval/transcriptFidelity";
 import { runEntry } from "./entry";
 

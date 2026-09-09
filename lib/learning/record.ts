@@ -59,7 +59,11 @@ function toItems(input: RecordInput, now: string): LearnedItem[] {
   const source = verdicts?.length
     ? verdicts
         .filter((v) => v.verdict === "supported")
-        .map((v) => ({ text: v.claim, evidence: v.evidence, provenance: "verified" as const }))
+        .map((v) => ({
+          text: v.claim,
+          evidence: v.evidence,
+          provenance: "verified" as const,
+        }))
     : episode.keyPoints.map((text) => ({
         text,
         evidence: undefined,
@@ -85,7 +89,12 @@ function toItems(input: RecordInput, now: string): LearnedItem[] {
 
 /** Two items are the same thing if their wording matches once normalized. */
 function sameItem(a: string, b: string): boolean {
-  const n = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim();
+  const n = (s: string) =>
+    s
+      .toLowerCase()
+      .replace(/[^a-z0-9 ]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
   return n(a) === n(b);
 }
 

@@ -134,7 +134,9 @@ describe("verifyClaims", () => {
 
   it("normalizes empty evidence to undefined", async () => {
     const provider = new StubProvider({
-      verdicts: [{ claimIndex: 0, verdict: "unsupported", evidence: "", specific: false }],
+      verdicts: [
+        { claimIndex: 0, verdict: "unsupported", evidence: "", specific: false },
+      ],
     });
     const { verdicts } = await verifyClaims(PAPER, [claim("x")], { provider });
     expect(verdicts[0]!.evidence).toBeUndefined();

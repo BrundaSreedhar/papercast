@@ -182,9 +182,13 @@ export function checkSpeechRate(ctx: AudioCheckContext): CheckResult {
     if (minutes <= 0) continue;
     const wpm = n / minutes;
     if (wpm > MAX_WPM) {
-      offenders.push(`turn ${timing.turnIndex}: ${Math.round(wpm)} wpm (text likely dropped)`);
+      offenders.push(
+        `turn ${timing.turnIndex}: ${Math.round(wpm)} wpm (text likely dropped)`,
+      );
     } else if (wpm < MIN_WPM) {
-      offenders.push(`turn ${timing.turnIndex}: ${Math.round(wpm)} wpm (unexpectedly slow)`);
+      offenders.push(
+        `turn ${timing.turnIndex}: ${Math.round(wpm)} wpm (unexpectedly slow)`,
+      );
     }
   }
 

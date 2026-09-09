@@ -187,7 +187,11 @@ async function runRefine(
       `round ${round}`,
       { [A.PAPERCAST_ROUND]: round, [A.PAPERCAST_FAILURES_IN]: notes.length },
       async () => {
-        opts.onProgress?.(round, maxRounds, `Correcting ${notes.length} unsupported claims`);
+        opts.onProgress?.(
+          round,
+          maxRounds,
+          `Correcting ${notes.length} unsupported claims`,
+        );
         const revised = await reviseEpisode(current.episode, paper, notes, {
           provider: opts.provider,
         });

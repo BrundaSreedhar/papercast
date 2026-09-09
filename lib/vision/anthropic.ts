@@ -26,7 +26,11 @@ export class AnthropicVisionProvider implements VisionProvider {
           content: [
             {
               type: "image",
-              source: { type: "base64", media_type: "image/png", data: png.toString("base64") },
+              source: {
+                type: "base64",
+                media_type: "image/png",
+                data: png.toString("base64"),
+              },
             },
             { type: "text", text: visionUserPrompt(captions) },
           ],

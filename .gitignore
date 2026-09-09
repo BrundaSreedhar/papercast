@@ -51,3 +51,6 @@ learning.json.tmp
 
 # demo papers (fetched from the manifest, not redistributed here)
 demo/papers/
+
+# saved episodes (the library)
+data/episodes/

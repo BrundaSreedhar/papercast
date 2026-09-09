@@ -23,7 +23,12 @@ import { buildWav, parseWav, type WavFormat } from "../tts/wav";
 import type { EpisodeAudio } from "../tts/types";
 import type { Episode } from "../llm/schema";
 
-const FMT: WavFormat = { audioFormat: 1, channels: 1, sampleRate: 22050, bitsPerSample: 16 };
+const FMT: WavFormat = {
+  audioFormat: 1,
+  channels: 1,
+  sampleRate: 22050,
+  bitsPerSample: 16,
+};
 const WPM = 150;
 
 /** A tone, so RMS is well above the silence floor like real speech. */
@@ -122,7 +127,10 @@ describe("checkSpeechRate", () => {
 
   it("flags a turn that is implausibly slow", () => {
     const { episode, audio } = fixture([40, 55]);
-    audio.timings[0] = { ...audio.timings[0]!, endMs: audio.timings[0]!.startMs + 120_000 };
+    audio.timings[0] = {
+      ...audio.timings[0]!,
+      endMs: audio.timings[0]!.startMs + 120_000,
+    };
     expect(checkSpeechRate({ episode, audio }).passed).toBe(false);
   });
 

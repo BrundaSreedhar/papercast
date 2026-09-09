@@ -5,7 +5,7 @@
  * something useful without leaking internals.
  */
 import { describe, it, expect } from "vitest";
-import { JobStore } from "./store";
+import { MemoryJobStore } from "./store";
 import { activeStages, overallPercent, isTerminal, STAGE_WEIGHTS, STAGES } from "./types";
 import { toJobError } from "./errors";
 import { ContextTruncationError } from "../llm/contextGuard";
@@ -64,16 +64,32 @@ describe("overallPercent", () => {
    */
   it("finishes at 100 on the last stage a run actually reaches", () => {
     expect(
-      overallPercent("scripting", 1, activeStages({ revise: false, audio: false, verify: false })),
+      overallPercent(
+        "scripting",
+        1,
+        activeStages({ revise: false, audio: false, verify: false }),
+      ),
     ).toBe(100);
     expect(
-      overallPercent("synthesizing", 1, activeStages({ revise: false, audio: true, verify: false })),
+      overallPercent(
+        "synthesizing",
+        1,
+        activeStages({ revise: false, audio: true, verify: false }),
+      ),
     ).toBe(100);
     expect(
-      overallPercent("reviewing", 1, activeStages({ revise: true, audio: false, verify: false })),
+      overallPercent(
+        "reviewing",
+        1,
+        activeStages({ revise: true, audio: false, verify: false }),
+      ),
     ).toBe(100);
     expect(
-      overallPercent("verifying", 1, activeStages({ revise: true, audio: true, verify: true })),
+      overallPercent(
+        "verifying",
+        1,
+        activeStages({ revise: true, audio: true, verify: true }),
+      ),
     ).toBe(100);
   });
 
@@ -106,8 +122,12 @@ describe("overallPercent", () => {
 
 describe("activeStages", () => {
   it("drops review when the run was not asked to fact-check", () => {
-    expect(activeStages({ revise: false, audio: true, verify: true })).not.toContain("reviewing");
-    expect(activeStages({ revise: true, audio: true, verify: true })).toContain("reviewing");
+    expect(activeStages({ revise: false, audio: true, verify: true })).not.toContain(
+      "reviewing",
+    );
+    expect(activeStages({ revise: true, audio: true, verify: true })).toContain(
+      "reviewing",
+    );
   });
 
   it("drops synthesis and verification for a transcript-only run", () => {
@@ -131,105 +151,108 @@ describe("isTerminal", () => {
   });
 });
 
-describe("JobStore", () => {
-  it("creates a job in the queued stage with a distinct id", () => {
-    const store = new JobStore();
-    const a = store.create(opts);
-    const b = store.create(opts);
+describe("MemoryJobStore", () => {
+  it("creates a job in the queued stage with a distinct id", async () => {
+    const store = new MemoryJobStore();
+    const a = await store.create(opts);
+    const b = await store.create(opts);
     expect(a.stage).toBe("queued");
     expect(a.percent).toBe(0);
     expect(a.id).not.toBe(b.id);
   });
 
-  it("records an event for every update", () => {
-    const store = new JobStore();
-    const job = store.create(opts);
-    store.update(job.id, { stage: "parsing", percent: 4, message: "Reading" });
-    store.update(job.id, { stage: "scripting", percent: 20, message: "Writing" });
-    expect(store.get(job.id)!.events.map((e) => e.message)).toEqual(["Reading", "Writing"]);
+  it("records an event for every update", async () => {
+    const store = new MemoryJobStore();
+    const job = await store.create(opts);
+    await store.update(job.id, { stage: "parsing", percent: 4, message: "Reading" });
+    await store.update(job.id, { stage: "scripting", percent: 20, message: "Writing" });
+    const stored = await store.get(job.id);
+    expect(stored!.events.map((e) => e.message)).toEqual(["Reading", "Writing"]);
   });
 
-  it("accumulates cost rather than replacing it", () => {
-    const store = new JobStore();
-    const job = store.create(opts);
-    store.update(job.id, { cost: { llmInputTokens: 100 } });
-    store.update(job.id, { cost: { ttsCalls: 23 } });
-    const cost = store.get(job.id)!.cost;
+  it("accumulates cost rather than replacing it", async () => {
+    const store = new MemoryJobStore();
+    const job = await store.create(opts);
+    await store.update(job.id, { cost: { llmInputTokens: 100 } });
+    await store.update(job.id, { cost: { ttsCalls: 23 } });
+    const cost = (await store.get(job.id))!.cost;
     expect(cost.llmInputTokens).toBe(100);
     expect(cost.ttsCalls).toBe(23);
   });
 
-  it("notifies a subscriber as progress happens", () => {
-    const store = new JobStore();
-    const job = store.create(opts);
+  it("notifies a subscriber as progress happens", async () => {
+    const store = new MemoryJobStore();
+    const job = await store.create(opts);
     const seen: string[] = [];
-    store.subscribe(job.id, (_j, e) => seen.push(e.message));
-    store.update(job.id, { stage: "parsing", message: "Reading" });
-    store.update(job.id, { stage: "scripting", message: "Writing" });
+    await store.subscribe(job.id, (_j, e) => seen.push(e.message));
+    await store.update(job.id, { stage: "parsing", message: "Reading" });
+    await store.update(job.id, { stage: "scripting", message: "Writing" });
     expect(seen).toEqual(["Reading", "Writing"]);
   });
 
-  it("replays history to a late subscriber", () => {
+  it("replays history to a late subscriber", async () => {
     // A browser that connects after work started must still see the story.
-    const store = new JobStore();
-    const job = store.create(opts);
-    store.update(job.id, { stage: "parsing", message: "Reading" });
-    store.update(job.id, { stage: "scripting", message: "Writing" });
+    const store = new MemoryJobStore();
+    const job = await store.create(opts);
+    await store.update(job.id, { stage: "parsing", message: "Reading" });
+    await store.update(job.id, { stage: "scripting", message: "Writing" });
 
     const seen: string[] = [];
-    store.subscribe(job.id, (_j, e) => seen.push(e.message));
+    await store.subscribe(job.id, (_j, e) => seen.push(e.message));
     expect(seen).toEqual(["Reading", "Writing"]);
   });
 
-  it("replays events carrying their own stage, not the job's current one", () => {
+  it("replays events carrying their own stage, not the job's current one", async () => {
     // Regression: a stream handler that read the job's stage saw every replayed
     // event as terminal, ended the response on the first, then wrote to a
     // closed stream and took the server process down with it.
-    const store = new JobStore();
-    const job = store.create(opts);
-    store.update(job.id, { stage: "parsing", message: "Reading" });
-    store.update(job.id, { stage: "scripting", message: "Writing" });
-    store.update(job.id, { stage: "done", percent: 100, message: "Ready" });
+    const store = new MemoryJobStore();
+    const job = await store.create(opts);
+    await store.update(job.id, { stage: "parsing", message: "Reading" });
+    await store.update(job.id, { stage: "scripting", message: "Writing" });
+    await store.update(job.id, { stage: "done", percent: 100, message: "Ready" });
 
     const stages: string[] = [];
-    store.subscribe(job.id, (_j, e) => stages.push(e.stage));
+    await store.subscribe(job.id, (_j, e) => stages.push(e.stage));
     expect(stages).toEqual(["parsing", "scripting", "done"]);
     // Exactly one terminal event, so a consumer ends the stream exactly once.
     expect(stages.filter((s) => s === "done")).toHaveLength(1);
   });
 
-  it("stops notifying once a job has finished", () => {
-    const store = new JobStore();
-    const job = store.create(opts);
+  it("stops notifying once a job has finished", async () => {
+    const store = new MemoryJobStore();
+    const job = await store.create(opts);
     const seen: string[] = [];
-    store.subscribe(job.id, (_j, e) => seen.push(e.message));
-    store.update(job.id, { stage: "done", percent: 100, message: "Ready" });
-    store.update(job.id, { stage: "parsing", message: "should not arrive" });
+    await store.subscribe(job.id, (_j, e) => seen.push(e.message));
+    await store.update(job.id, { stage: "done", percent: 100, message: "Ready" });
+    await store.update(job.id, { stage: "parsing", message: "should not arrive" });
     expect(seen).toEqual(["Ready"]);
   });
 
-  it("lets a subscriber unsubscribe", () => {
-    const store = new JobStore();
-    const job = store.create(opts);
+  it("lets a subscriber unsubscribe", async () => {
+    const store = new MemoryJobStore();
+    const job = await store.create(opts);
     const seen: string[] = [];
-    const off = store.subscribe(job.id, (_j, e) => seen.push(e.message));
+    const off = await store.subscribe(job.id, (_j, e) => seen.push(e.message));
     off();
-    store.update(job.id, { stage: "parsing", message: "Reading" });
+    await store.update(job.id, { stage: "parsing", message: "Reading" });
     expect(seen).toEqual([]);
   });
 
-  it("returns undefined for an unknown job rather than throwing", () => {
-    const store = new JobStore();
-    expect(store.get("nope")).toBeUndefined();
-    expect(store.update("nope", { stage: "done" })).toBeUndefined();
-    expect(() => store.subscribe("nope", () => {})).not.toThrow();
+  it("returns undefined for an unknown job rather than rejecting", async () => {
+    const store = new MemoryJobStore();
+    await expect(store.get("nope")).resolves.toBeUndefined();
+    await expect(store.update("nope", { stage: "done" })).resolves.toBeUndefined();
+    // Subscribing to a job that is gone hands back a no-op rather than failing,
+    // so a caller never has to branch on it.
+    await expect(store.subscribe("nope", () => {})).resolves.toBeInstanceOf(Function);
   });
 
-  it("evicts jobs past their retention window", () => {
-    const store = new JobStore(-1); // everything is already expired
-    store.create(opts);
-    store.create(opts);
-    expect(store.list().length).toBeLessThanOrEqual(1);
+  it("evicts jobs past their retention window", async () => {
+    const store = new MemoryJobStore(-1); // everything is already expired
+    await store.create(opts);
+    await store.create(opts);
+    expect((await store.list()).length).toBeLessThanOrEqual(1);
   });
 });
 
@@ -248,7 +271,9 @@ describe("toJobError", () => {
   });
 
   it("classifies credential and rate-limit failures", () => {
-    expect(toJobError(new Error("401 Unauthorized: invalid api key")).code).toBe("auth_failed");
+    expect(toJobError(new Error("401 Unauthorized: invalid api key")).code).toBe(
+      "auth_failed",
+    );
     expect(toJobError(new Error("429 rate limit exceeded")).code).toBe("rate_limited");
   });
 
@@ -265,6 +290,45 @@ describe("toJobError", () => {
   it("classifies an unreachable provider", () => {
     expect(toJobError(new Error("connect ECONNREFUSED 127.0.0.1:11434")).code).toBe(
       "provider_unreachable",
+    );
+  });
+
+  it("names a missing voice model rather than blaming synthesis in general", () => {
+    // Piper reports this on stderr; the fix is a path, not a retry.
+    const e = toJobError(
+      new Error(
+        "Piper synthesis failed (.venv-tts/bin/piper, ryan): ValueError: Unable to find voice: .voices/missing.onnx",
+      ),
+    );
+    expect(e.code).toBe("voice_missing");
+    expect(e.remedy).toMatch(/PIPER_HOST_VOICE|PIPER_BIN/);
+  });
+
+  it("classifies a synthesis backend that died mid-chunk", () => {
+    const e = toJobError(
+      new Error("Piper synthesis failed (.venv-tts/bin/piper, ryan): Killed: 9"),
+    );
+    expect(e.code).toBe("synthesis_failed");
+    expect(e.remedy).toMatch(/TTS_PROVIDER=say/);
+  });
+
+  it("classifies audio that could not be joined", () => {
+    expect(
+      toJobError(
+        new Error("Segment 3 has a different audio format (16000Hz/1ch) than the first"),
+      ).code,
+    ).toBe("audio_join_failed");
+    expect(toJobError(new Error("No audio to join.")).code).toBe("audio_join_failed");
+  });
+
+  it("tells a provider outage apart from a bug in the pipeline", () => {
+    // Gemini's endpoint 503s under load with an empty body, which used to read
+    // as "something went wrong while producing the episode".
+    const e = toJobError(new Error("503 status code (no body)"));
+    expect(e.code).toBe("provider_unavailable");
+    expect(e.remedy).toMatch(/try again|switch/i);
+    expect(toJobError(new Error("Service Unavailable")).code).toBe(
+      "provider_unavailable",
     );
   });
 

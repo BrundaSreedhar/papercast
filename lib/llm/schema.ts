@@ -8,9 +8,9 @@ import { z } from "zod";
 
 export const DialogueTurnSchema = z.object({
   speaker: z
-    .enum(["host", "guest"])
+    .enum(["host", "guest", "narrator"])
     .describe(
-      "Who is speaking. 'host' guides the conversation; 'guest' explains the paper. Neither has a name.",
+      "Who is speaking. In a two-voice episode: 'host' guides the conversation and 'guest' explains the paper. In a solo episode every turn is 'narrator'. Never mix 'narrator' with the other two. No speaker has a name.",
     ),
   text: z
     .string()
@@ -31,7 +31,7 @@ export const EpisodeSchema = z.object({
   turns: z
     .array(DialogueTurnSchema)
     .describe(
-      "The podcast as an alternating two-host conversation between a host and an expert guest.",
+      "The episode, split into turns. Two-voice episodes alternate host and guest; solo episodes are consecutive 'narrator' beats read back to back as one continuous talk.",
     ),
 });
 
@@ -41,3 +41,7 @@ export type Episode = z.infer<typeof EpisodeSchema>;
 export const EPISODE_SCHEMA_NAME = "episode";
 export const EPISODE_SCHEMA_DESCRIPTION =
   "A podcast episode derived strictly from the provided paper: a summary, key points, and a two-host dialogue.";
+export const EPISODE_SCHEMA_DESCRIPTION_ELI5 =
+  "A podcast episode derived strictly from the provided paper: a plain summary, plain key points, and a single-voice story for a young child delivered as consecutive 'narrator' turns.";
+export const EPISODE_SCHEMA_DESCRIPTION_SOLO =
+  "A podcast episode derived strictly from the provided paper: a summary, key points, and a single-voice monologue delivered as consecutive 'narrator' turns.";

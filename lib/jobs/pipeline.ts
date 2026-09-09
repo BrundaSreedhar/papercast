@@ -9,25 +9,40 @@
  * Framework-agnostic on purpose: it takes a store and emits into it, so an
  * Express route, a Next.js handler, or a test can all drive the same code.
  */
+import { randomUUID } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { extractPaper } from "../pdf/extract";
 import { generateEpisode } from "../llm/generateEpisode";
 import { getProvider } from "../llm/index";
 import type { ProviderName } from "../config/env";
-import { resolveTTSProvider, synthesizeEpisode, type TTSProviderName } from "../tts/index";
+import {
+  resolveTTSProvider,
+  synthesizeEpisode,
+  type TTSProviderName,
+} from "../tts/index";
 import { sliceWav } from "../tts/wav";
 import { runAudioChecks } from "../eval/audioChecks";
-import { WhisperCppProvider, whisperAvailable } from "../eval/asr";
+import { WhisperCppProvider, whisperAvailable } from "../asr/index";
 import { verifyPerTurn } from "../eval/transcriptFidelity";
 import { estimateCost } from "../eval/report";
 import { toJobError } from "./errors";
 import { refineEpisode } from "../refine/index";
+import { groundTurns } from "../ground/index";
+import { saveEpisode } from "../library/store";
+import type { EpisodeRecord } from "../library/types";
+import type { EpisodeFormat } from "../llm/generateEpisode";
 import { withSpan } from "../trace/tracer";
 import * as TA from "../trace/attributes";
 import { addUsage } from "../llm/usage";
 import { loadLedger, recordEpisode, saveLedger } from "../learning/index";
-import { activeStages, overallPercent, type JobError, type JobReview } from "./types";
-import type { JobStore } from "./store";
+import {
+  activeStages,
+  overallPercent,
+  type JobError,
+  type JobReview,
+  type JobStage,
+} from "./types";
+import type { JobPatch, JobStore } from "./store";
 
 export interface RunJobInput {
   pdf: Buffer;
@@ -48,6 +63,8 @@ export interface RunJobInput {
   paperTitle?: string;
   /** Where to write the finished audio, when audio is wanted. */
   audioPath?: string;
+  /** Two voices, one voice, or one voice explaining to a child. */
+  format?: EpisodeFormat;
 }
 
 /**
@@ -75,6 +92,34 @@ export async function runJob(
   );
 }
 
+/**
+ * Put a finished episode on the shelf.
+ *
+ * Best-effort, like the study ledger: an episode that was produced and can be
+ * listened to right now must not be turned into a failure because a disk write
+ * did not work. It simply will not be there tomorrow, and the log says why.
+ */
+async function shelve(record: EpisodeRecord): Promise<void> {
+  try {
+    await saveEpisode(record);
+  } catch (err) {
+    console.warn(`[job ${record.id}] could not save the episode to the library:`, err);
+  }
+}
+
+/** Anchor turns to the paper, or return nothing. Never throws. */
+function ground(
+  episode: Parameters<typeof groundTurns>[0],
+  paper: Parameters<typeof groundTurns>[1],
+) {
+  try {
+    return groundTurns(episode, paper);
+  } catch (err) {
+    console.warn("[job] could not anchor turns to the paper:", err);
+    return undefined;
+  }
+}
+
 async function runJobStages(
   store: JobStore,
   jobId: string,
@@ -87,11 +132,47 @@ async function runJobStages(
     audio: Boolean(input.audioPath),
     verify: input.verify,
   });
-  const step = (stage: Parameters<typeof overallPercent>[0], within: number, message: string) =>
-    store.update(jobId, { stage, percent: overallPercent(stage, within, stages), message });
+  /**
+   * The stage the job is in right now.
+   *
+   * The terminal update overwrites `stage` with "error", so by the time a
+   * failure is recorded the one fact anybody wants — where did it break — has
+   * already been thrown away. Every write goes through `update`, so this stays
+   * current without each call site having to remember.
+   */
+  let current: JobStage = "queued";
+  const update = (patch: JobPatch) => {
+    if (patch.stage) current = patch.stage;
+    return store.update(jobId, patch);
+  };
+
+  const step = (
+    stage: Parameters<typeof overallPercent>[0],
+    within: number,
+    message: string,
+  ) =>
+    update({
+      stage,
+      percent: overallPercent(stage, within, stages),
+      message,
+    });
+
+  /**
+   * Progress reported from inside another module's `onProgress` callback, which
+   * is synchronous by contract and cannot await a store write. These are started
+   * and not waited on: losing a progress tick is no reason to fail an episode
+   * that is otherwise fine. Keeping concurrent writes in order is the store's
+   * problem — a Map has no ordering to lose, and a networked store serializes
+   * per job.
+   */
+  const emit = (patch: JobPatch) => {
+    void update(patch).catch((err) => {
+      console.warn(`[job ${jobId}] could not record progress:`, err);
+    });
+  };
 
   try {
-    step("parsing", 0, "Reading the paper");
+    await step("parsing", 0, "Reading the paper");
     // Extraction takes the first block of text on page one for the title, which
     // is right for most papers and wrong for the ones that open with a
     // publisher's notice — arXiv's copy of the transformer paper begins with
@@ -99,17 +180,20 @@ async function runJobStages(
     // title for certain, as the demo shelf does, says so rather than letting a
     // legal footer travel into the prompt as the subject of the episode.
     const extracted = await extractPaper(input.pdf);
-    const paper = input.paperTitle ? { ...extracted, title: input.paperTitle } : extracted;
-    store.update(jobId, {
+    const paper = input.paperTitle
+      ? { ...extracted, title: input.paperTitle }
+      : extracted;
+    await update({
       paperTitle: paper.title,
       percent: overallPercent("parsing", 1, stages),
       message: `Parsed ${paper.sections.length} sections, ${paper.wordCount} words`,
     });
 
-    step("scripting", 0, "Writing the episode");
+    await step("scripting", 0, "Writing the episode");
     const generated = await generateEpisode(paper, {
       minutes: input.minutes,
       provider: input.provider ? getProvider(input.provider) : undefined,
+      format: input.format,
     });
     // LLM spend accumulates across scripting and review; the store replaces cost
     // fields rather than adding to them, so the running total lives here. It
@@ -123,7 +207,7 @@ async function runJobStages(
       usd: estimateCost(generated.model, llmUsage),
     });
 
-    store.update(jobId, {
+    await update({
       percent: overallPercent("scripting", 1, stages),
       message: `Wrote ${generated.episode.turns.length} turns`,
       cost: costSoFar(),
@@ -147,7 +231,7 @@ async function runJobStages(
           provider,
           maxRounds: input.reviseRounds,
           onProgress: (round, of, message) =>
-            store.update(jobId, {
+            emit({
               stage: "reviewing",
               // Round 0 is the first fact-check; each round after it is a repair
               // plus a re-check, so progress is measured over rounds + 1 steps.
@@ -170,7 +254,7 @@ async function runJobStages(
           improved: refined.improved,
         };
 
-        store.update(jobId, {
+        await update({
           percent: overallPercent("reviewing", 1, stages),
           message: review.improved
             ? `Repaired ${review.revisedTurns.length} turns · ${review.failuresBefore} → ${review.failuresAfter} unsupported claims`
@@ -182,7 +266,7 @@ async function runJobStages(
       } catch (err) {
         console.warn(`[job ${jobId}] the fact-check did not complete:`, err);
         reviewError = toJobError(err);
-        store.update(jobId, {
+        await update({
           stage: "reviewing",
           percent: overallPercent("reviewing", 1, stages),
           message: "Could not fact-check the script — delivering it unchecked",
@@ -191,22 +275,49 @@ async function runJobStages(
       }
     }
 
+    // Anchoring is lexical and local: no model, no key, no judge. It runs after
+    // review because review may have rewritten the turns, and a reference must
+    // describe the script that was actually kept. Best-effort like the ledger —
+    // a failure to place turns must never cost an episode that was produced.
+    const citations = ground(episode, paper);
+
     if (!input.audioPath) {
-      store.update(jobId, {
+      await shelve({
+        id: jobId,
+        createdAt: Date.now(),
+        paperTitle: paper.title,
+        paperId: input.paperId,
+        minutes: input.minutes,
+        format: input.format ?? "dialogue",
+        provider: generated.provider,
+        model: generated.model,
+        turnCount: episode.turns.length,
+        summary: episode.summary,
+        keyPoints: episode.keyPoints,
+        hasAudio: false,
+        review,
+        // No synthesis happened on this path, so the call count is honestly zero
+        // rather than absent.
+        cost: { ...costSoFar(), ttsCalls: 0 },
+        episode,
+        citations,
+        paper,
+      });
+      await update({
         stage: "done",
         percent: 100,
         message: "Transcript ready",
-        result: { episode, review, reviewError },
+        result: { episode, review, reviewError, citations },
       });
       return;
     }
 
-    step("synthesizing", 0, "Recording the episode");
+    await step("synthesizing", 0, "Recording the episode");
     const tts = await resolveTTSProvider(input.ttsProvider);
     const audio = await synthesizeEpisode(episode, {
       provider: tts,
       onProgress: (done, total) =>
-        store.update(jobId, {
+        emit({
           percent: overallPercent("synthesizing", done / total, stages),
           message: `Recording turn ${done} of ${total}`,
         }),
@@ -218,7 +329,7 @@ async function runJobStages(
       audio,
       targetMinutes: input.minutes,
     });
-    store.update(jobId, {
+    await update({
       percent: overallPercent("synthesizing", 1, stages),
       message: `Recorded ${(audio.totalMs / 1000 / 60).toFixed(1)} minutes · ${checks.errors} audio errors`,
       cost: { ttsCalls: audio.calls },
@@ -226,14 +337,14 @@ async function runJobStages(
 
     let transcriptRecall: number | undefined;
     if (input.verify && (await whisperAvailable())) {
-      step("verifying", 0, "Checking the audio against the script");
+      await step("verifying", 0, "Checking the audio against the script");
       const fidelity = await verifyPerTurn(
         episode,
         audio,
         new WhisperCppProvider(),
         sliceWav,
         (done, total) =>
-          store.update(jobId, {
+          emit({
             percent: overallPercent("verifying", done / total, stages),
             message: `Verifying turn ${done} of ${total}`,
           }),
@@ -261,7 +372,30 @@ async function runJobStages(
       console.warn(`[job ${jobId}] could not update the study ledger:`, err);
     }
 
-    store.update(jobId, {
+    await shelve({
+      id: jobId,
+      createdAt: Date.now(),
+      paperTitle: paper.title,
+      paperId: input.paperId,
+      minutes: input.minutes,
+      format: input.format ?? "dialogue",
+      provider: generated.provider,
+      model: generated.model,
+      turnCount: episode.turns.length,
+      summary: episode.summary,
+      keyPoints: episode.keyPoints,
+      totalMs: audio.totalMs,
+      hasAudio: true,
+      transcriptRecall,
+      review,
+      cost: { ...costSoFar(), ttsCalls: audio.calls },
+      episode,
+      citations,
+      timings: audio.timings,
+      paper,
+    });
+
+    await update({
       stage: "done",
       percent: 100,
       message: "Episode ready",
@@ -269,6 +403,7 @@ async function runJobStages(
         episode,
         review,
         reviewError,
+        citations,
         audioPath: input.audioPath,
         timings: audio.timings,
         totalMs: audio.totalMs,
@@ -277,12 +412,15 @@ async function runJobStages(
     });
   } catch (err) {
     // The full error stays in the server log; the client gets a safe summary.
-    console.error(`[job ${jobId}]`, err);
-    store.update(jobId, {
+    // The reference is what connects the two: without it "something went
+    // wrong" is unfindable, and with it a person greps the log for one short id.
+    const ref = randomUUID().slice(0, 8);
+    console.error(`[job ${jobId}] [ref ${ref}] failed during "${current}":`, err);
+    await update({
       stage: "error",
       percent: 100,
-      message: "Failed",
-      error: toJobError(err),
+      message: `Failed during ${current}`,
+      error: { ...toJobError(err), failedStage: current, ref },
     });
   }
 }

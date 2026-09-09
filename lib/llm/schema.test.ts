@@ -19,8 +19,19 @@ describe("EpisodeSchema", () => {
   });
 
   it("rejects an invalid speaker", () => {
-    const bad = { ...VALID, turns: [{ speaker: "narrator", text: "hi" }] };
+    const bad = { ...VALID, turns: [{ speaker: "interviewer", text: "hi" }] };
     expect(() => EpisodeSchema.parse(bad)).toThrow();
+  });
+
+  it("accepts a solo episode narrated end to end", () => {
+    const solo = {
+      ...VALID,
+      turns: [
+        { speaker: "narrator", text: "Here is the problem the paper takes on." },
+        { speaker: "narrator", text: "And here is what the authors did about it." },
+      ],
+    };
+    expect(EpisodeSchema.parse(solo).turns[1]!.speaker).toBe("narrator");
   });
 
   it("rejects a missing field", () => {

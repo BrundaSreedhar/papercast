@@ -15,7 +15,7 @@ import {
 } from "./checks";
 import type { CheckContext } from "./types";
 import type { PaperStructure } from "../pdf/extract";
-import type { Episode } from "../llm/schema";
+import type { DialogueTurn, Episode } from "../llm/schema";
 
 const PAPER: PaperStructure = {
   title: "Amazon Aurora: Design Considerations",
@@ -30,7 +30,10 @@ const PAPER: PaperStructure = {
   wordCount: 40,
 };
 
-function ctx(turns: Episode["turns"], overrides: Partial<CheckContext> = {}): CheckContext {
+function ctx(
+  turns: Episode["turns"],
+  overrides: Partial<CheckContext> = {},
+): CheckContext {
   return {
     episode: { summary: "s", keyPoints: ["k"], turns },
     paper: PAPER,
@@ -40,7 +43,10 @@ function ctx(turns: Episode["turns"], overrides: Partial<CheckContext> = {}): Ch
   };
 }
 
-const t = (speaker: "host" | "guest", text: string) => ({ speaker, text });
+const t = (speaker: DialogueTurn["speaker"], text: string): DialogueTurn => ({
+  speaker,
+  text,
+});
 
 describe("checkSchema", () => {
   it("passes a well-formed episode", () => {
@@ -53,7 +59,7 @@ describe("checkSchema", () => {
     // shape that slipped through rather than to restate the type system.
     bad.episode = {
       ...bad.episode,
-      turns: [{ speaker: "narrator", text: "hi" }],
+      turns: [{ speaker: "interviewer", text: "hi" }],
     } as unknown as typeof bad.episode;
     expect(checkSchema(bad).passed).toBe(false);
   });
@@ -77,6 +83,87 @@ describe("checkAlternation", () => {
     expect(r.passed).toBe(false);
     expect(r.detail).toContain("share a speaker");
   });
+
+  it("passes consecutive turns when the episode is narrated throughout", () => {
+    // A solo episode is consecutive turns by construction, so alternation
+    // cannot apply to it.
+    const r = checkAlternation(
+      ctx([t("narrator", "a"), t("narrator", "b"), t("narrator", "c")]),
+    );
+    expect(r.passed).toBe(true);
+  });
+
+  it("still fails a dialogue that collapsed into one speaker", () => {
+    // The regression this check was written for must survive the solo branch:
+    // a collapsed dialogue says "host", not "narrator", so it takes the old path.
+    expect(checkAlternation(ctx([t("guest", "a"), t("guest", "b")])).passed).toBe(false);
+  });
+
+  it("fails an episode that mixes a narrator with a second voice", () => {
+    // A stray host line in a monologue is a voice nobody will synthesize.
+    const r = checkAlternation(
+      ctx([t("narrator", "a"), t("host", "b"), t("narrator", "c")]),
+    );
+    expect(r.passed).toBe(false);
+    expect(r.detail).toContain("Mixed formats");
+  });
+});
+
+describe("guardrails apply to every format", () => {
+  // The formats differ in how many voices they have, not in what they are
+  // allowed to invent. Each planted violation must be caught in a narrated
+  // episode exactly as it would be in a dialogue.
+  const violations: [string, string, (r: CheckContext) => boolean][] = [
+    [
+      "an invented show name",
+      "Welcome to Science Uncovered, everyone.",
+      (c) => !checkShowName(c).passed,
+    ],
+    [
+      "a fabricated credential",
+      "I'm Dr. Rivera and I study this.",
+      (c) => !checkNoHonorifics(c).passed,
+    ],
+    [
+      "claimed expertise",
+      "As an expert in distributed systems, I can tell you this.",
+      (c) => !checkNoClaimedExpertise(c).passed,
+    ],
+    [
+      "author impersonation",
+      "We found that our method reduced network traffic.",
+      (c) => !checkNoAuthorImpersonation(c).passed,
+    ],
+    [
+      "an ungrounded proper noun",
+      "It works a bit like Kubernetes does.",
+      (c) => !checkProperNouns(c).passed,
+    ],
+    [
+      "an invented number",
+      "It made everything 923 times faster.",
+      (c) => !checkNumbers(c).passed,
+    ],
+  ];
+
+  for (const [what, line, fails] of violations) {
+    it(`catches ${what} in a narrated episode`, () => {
+      expect(fails(ctx([t("narrator", line)]))).toBe(true);
+    });
+
+    it(`catches ${what} in a dialogue`, () => {
+      expect(fails(ctx([t("host", line)]))).toBe(true);
+    });
+  }
+
+  it("passes a clean narrated episode on every guardrail", () => {
+    const clean = ctx([
+      t("narrator", "The paper describes a database that replicates data six ways."),
+      t("narrator", "The authors argue the network becomes the limiting factor."),
+    ]);
+    const report = runDeterministicChecks(clean);
+    expect(report.errors).toBe(0);
+  });
 });
 
 describe("checkShowName", () => {
@@ -85,13 +172,17 @@ describe("checkShowName", () => {
   });
 
   it("catches the invented show name from the real failure", () => {
-    const r = checkShowName(ctx([t("host", "Welcome to this episode of Science Uncovered.")]));
+    const r = checkShowName(
+      ctx([t("host", "Welcome to this episode of Science Uncovered.")]),
+    );
     expect(r.passed).toBe(false);
     expect(r.detail).toContain("Science Uncovered");
   });
 
   it("accepts 'welcome back to' phrasing", () => {
-    expect(checkShowName(ctx([t("host", "Welcome back to PaperCast.")])).passed).toBe(true);
+    expect(checkShowName(ctx([t("host", "Welcome back to PaperCast.")])).passed).toBe(
+      true,
+    );
   });
 });
 
@@ -103,9 +194,9 @@ describe("checkNoHonorifics", () => {
   });
 
   it("passes clean dialogue", () => {
-    expect(checkNoHonorifics(ctx([t("host", "Thanks for walking us through it.")])).passed).toBe(
-      true,
-    );
+    expect(
+      checkNoHonorifics(ctx([t("host", "Thanks for walking us through it.")])).passed,
+    ).toBe(true);
   });
 });
 
@@ -127,7 +218,8 @@ describe("checkNoAuthorImpersonation", () => {
 
   it("catches 'our approach'", () => {
     expect(
-      checkNoAuthorImpersonation(ctx([t("guest", "our approach reduces traffic")])).passed,
+      checkNoAuthorImpersonation(ctx([t("guest", "our approach reduces traffic")]))
+        .passed,
     ).toBe(false);
   });
 
@@ -141,21 +233,25 @@ describe("checkNoAuthorImpersonation", () => {
 
   it("does not fire on ordinary conversational 'we'", () => {
     expect(
-      checkNoAuthorImpersonation(ctx([t("host", "Today we're digging into this paper.")])).passed,
+      checkNoAuthorImpersonation(ctx([t("host", "Today we're digging into this paper.")]))
+        .passed,
     ).toBe(true);
   });
 });
 
 describe("checkNoDirectAddress", () => {
   it("catches a speaker addressed by an invented name", () => {
-    const r = checkNoDirectAddress(ctx([t("host", "Thanks, Sam, for that explanation.")]));
+    const r = checkNoDirectAddress(
+      ctx([t("host", "Thanks, Sam, for that explanation.")]),
+    );
     expect(r.passed).toBe(false);
     expect(r.detail).toContain("Sam");
   });
 
   it("passes nameless address", () => {
     expect(
-      checkNoDirectAddress(ctx([t("host", "Thanks for walking us through that.")])).passed,
+      checkNoDirectAddress(ctx([t("host", "Thanks for walking us through that.")]))
+        .passed,
     ).toBe(true);
   });
 });
@@ -163,7 +259,8 @@ describe("checkNoDirectAddress", () => {
 describe("checkProperNouns", () => {
   it("passes entities that appear in the paper", () => {
     expect(
-      checkProperNouns(ctx([t("guest", "The Aurora design uses Availability Zones.")])).passed,
+      checkProperNouns(ctx([t("guest", "The Aurora design uses Availability Zones.")]))
+        .passed,
     ).toBe(true);
   });
 
@@ -174,15 +271,17 @@ describe("checkProperNouns", () => {
   });
 
   it("ignores sentence-initial capitals", () => {
-    expect(checkProperNouns(ctx([t("guest", "Databases are hard. Networks too.")])).passed).toBe(
-      true,
-    );
+    expect(
+      checkProperNouns(ctx([t("guest", "Databases are hard. Networks too.")])).passed,
+    ).toBe(true);
   });
 });
 
 describe("checkNumbers", () => {
   it("passes figures present in the paper", () => {
-    expect(checkNumbers(ctx([t("guest", "It improved 35 times over MySQL.")])).passed).toBe(true);
+    expect(
+      checkNumbers(ctx([t("guest", "It improved 35 times over MySQL.")])).passed,
+    ).toBe(true);
   });
 
   it("flags a fabricated figure", () => {
@@ -192,7 +291,9 @@ describe("checkNumbers", () => {
   });
 
   it("ignores small ordinal numbers", () => {
-    expect(checkNumbers(ctx([t("guest", "There are 2 main ideas here.")])).passed).toBe(true);
+    expect(checkNumbers(ctx([t("guest", "There are 2 main ideas here.")])).passed).toBe(
+      true,
+    );
   });
 
   it("accepts rounded figures", () => {
@@ -219,6 +320,51 @@ describe("checkNumbers", () => {
   });
 });
 
+describe("proper nouns broken across a line", () => {
+  // Found on a real run: the Aurora paper prints "Zero-Downtime Patch", but the
+  // PDF wraps it as "Zero-\nDowntime", so the check called a correctly grounded
+  // product name invented. A harness that cries wolf teaches you to ignore it.
+  const wrapped: PaperStructure = {
+    title: "Amazon Aurora",
+    abstract: "A cloud-native relational database.",
+    sections: [
+      {
+        heading: "Lessons Learned",
+        content:
+          "We recently released a new Zero-\nDowntime Patch feature for the fleet.",
+      },
+    ],
+    wordCount: 20,
+  };
+
+  it("accepts a name the PDF hyphenated across a line break", () => {
+    const r = checkProperNouns(
+      ctx([t("host", "They shipped the Zero-Downtime Patch.")], { paper: wrapped }),
+    );
+    expect(r.passed).toBe(true);
+  });
+
+  it("accepts the rejoined spelling too, since the hyphen may be an artifact", () => {
+    const paper: PaperStructure = {
+      ...wrapped,
+      sections: [
+        { heading: "Method", content: "The redo proc-\nessing runs in Aurora storage." },
+      ],
+    };
+    const r = checkProperNouns(
+      ctx([t("host", "Aurora moves redo processing down.")], { paper }),
+    );
+    expect(r.passed).toBe(true);
+  });
+
+  it("still catches a name that is genuinely not in the paper", () => {
+    expect(
+      checkProperNouns(ctx([t("host", "It runs on Kubernetes.")], { paper: wrapped }))
+        .passed,
+    ).toBe(false);
+  });
+});
+
 describe("length checks", () => {
   it("flags a collapsed dialogue", () => {
     // The real regression: 5 turns where 14 were required.
@@ -226,6 +372,14 @@ describe("length checks", () => {
       t(i % 2 === 0 ? "host" : "guest", "short"),
     );
     expect(checkTurnCount(ctx(five)).passed).toBe(false);
+  });
+
+  it("holds a solo episode to the monologue floor, not the dialogue one", () => {
+    // Regression: a correctly paced 4-minute monologue was failed for having
+    // fewer turns than a dialogue of the same length needs.
+    const beats = Array.from({ length: 8 }, () => t("narrator", "a beat of the talk"));
+    expect(checkTurnCount(ctx(beats)).passed).toBe(true);
+    expect(checkTurnCount(ctx(beats.slice(0, 3))).passed).toBe(false);
   });
 
   it("flags an under-length episode", () => {

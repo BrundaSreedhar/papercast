@@ -64,15 +64,40 @@ export class PiperProvider implements TTSProvider {
       await child;
       return await readFile(out);
     } catch (err) {
+      // Piper explains itself on stderr and says almost nothing useful in the
+      // exit message, so dropping stderr threw away the actual reason — a
+      // missing voice file, an unreadable model — and left "Command failed".
+      const detail = failureDetail(err);
       throw new Error(
-        `Piper synthesis failed (${this.binary}, ${voiceName(model)}): ${
-          err instanceof Error ? err.message.split("\n")[0] : String(err)
-        }`,
+        `Piper synthesis failed (${this.binary}, ${voiceName(model)}): ${detail}`,
       );
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
   }
+}
+
+/**
+ * The most informative single line available about a failed run.
+ *
+ * Prefers stderr, which is where Piper writes the reason, and falls back to the
+ * exit message when the process produced none.
+ */
+function failureDetail(err: unknown): string {
+  const e = err as { stderr?: unknown; message?: unknown };
+  const stderr =
+    typeof e?.stderr === "string"
+      ? e.stderr
+      : Buffer.isBuffer(e?.stderr)
+        ? e.stderr.toString("utf8")
+        : "";
+  const line = stderr
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .at(-1);
+  if (line) return line;
+  return err instanceof Error ? (err.message.split("\n")[0] ?? "") : String(err);
 }
 
 /** Strip path and extension so reports name the voice, not a file path. */

@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
-  const job = store.get(id);
+  const job = await store.get(id);
   if (!job) {
     return new Response(JSON.stringify({ error: "No such job." }), {
       status: 404,
@@ -26,14 +26,21 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 
   const encoder = new TextEncoder();
   let unsubscribe: () => void = () => {};
+  // Subscribing is asynchronous now that a store may have to read history back
+  // over a network, which opens a window where the client can disconnect before
+  // the subscription exists. Without this flag the unsubscribe would land on the
+  // no-op above and the real listener would leak for the life of the process.
+  let cancelled = false;
 
   const stream = new ReadableStream({
-    start(controller) {
+    async start(controller) {
       let closed = false;
       const send = (event: string, data: unknown) => {
         if (closed) return;
         try {
-          controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+          controller.enqueue(
+            encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`),
+          );
         } catch {
           closed = true; // client went away mid-write
         }
@@ -48,7 +55,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
         }
       };
 
-      unsubscribe = store.subscribe(id, (j, e) => {
+      const off = await store.subscribe(id, (j, e) => {
         send("progress", { stage: e.stage, percent: e.percent, message: e.message });
         if (e.stage === "done") {
           send("done", {
@@ -66,8 +73,12 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
           finish();
         }
       });
+
+      if (cancelled) off();
+      else unsubscribe = off;
     },
     cancel() {
+      cancelled = true;
       unsubscribe();
     },
   });

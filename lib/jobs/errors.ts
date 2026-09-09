@@ -59,6 +59,18 @@ export function toJobError(err: unknown): JobError {
       remedy: "Wait a moment and try again, or switch provider.",
     };
   }
+  // A 5xx from a hosted provider is the provider having a bad minute, not a
+  // fault in the request. Left unclassified it reads as "something went wrong",
+  // which sends people hunting for a bug in their own pipeline. Seen constantly
+  // against Gemini's endpoint, which 503s under load with an empty body.
+  if (/\b50[0234]\b|service unavailable|overloaded|temporarily unavailable/i.test(raw)) {
+    return {
+      code: "provider_unavailable",
+      message: "The model provider is temporarily unavailable.",
+      remedy:
+        "This is on their side, and the request was already retried. Wait a minute and try again, or switch to another provider.",
+    };
+  }
   if (/ECONNREFUSED|fetch failed|ENOTFOUND|network/i.test(raw)) {
     return {
       code: "provider_unreachable",
@@ -66,6 +78,36 @@ export function toJobError(err: unknown): JobError {
       remedy: "Check that the endpoint is running and reachable.",
     };
   }
+  // Synthesis had no branch at all, so every voice failure — a missing Piper
+  // binary, a voice model that was never downloaded, a backend that died
+  // mid-chunk — arrived as "something went wrong" at the one stage where the
+  // cause is almost always local setup and entirely fixable.
+  if (/piper synthesis failed/i.test(raw)) {
+    const missingVoice =
+      /unable to find voice|no such file|cannot find|not found|ENOENT/i.test(raw);
+    return {
+      code: missingVoice ? "voice_missing" : "synthesis_failed",
+      message: missingVoice
+        ? "The speech synthesizer could not find its voice model."
+        : "The speech synthesizer failed while recording a turn.",
+      remedy: missingVoice
+        ? "Check PIPER_BIN and the voice paths in PIPER_HOST_VOICE / PIPER_GUEST_VOICE, or unset TTS_PROVIDER to fall back to the built-in system voice."
+        : "Try TTS_PROVIDER=say to use the built-in system voice, which needs no setup.",
+    };
+  }
+  if (
+    /different audio format|only uncompressed pcm|no audio to join|wave file has no|not a wave/i.test(
+      raw,
+    )
+  ) {
+    return {
+      code: "audio_join_failed",
+      message: "The recorded turns could not be joined into one episode.",
+      remedy:
+        "This happens when turns come back in different formats. Re-run with a single TTS provider set explicitly.",
+    };
+  }
+
   if (/Could not extract text|no dialogue turns|not a riff|pdf/i.test(raw)) {
     return {
       code: "unreadable_input",
@@ -78,6 +120,7 @@ export function toJobError(err: unknown): JobError {
     code: "internal",
     message: "Something went wrong while producing the episode.",
     // The detail stays in the server log rather than travelling to the client.
-    remedy: undefined,
+    // The caller attaches a reference so the two can be connected.
+    remedy: "The server log holds the full error against this job's reference.",
   };
 }

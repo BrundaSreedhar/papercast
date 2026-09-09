@@ -6,6 +6,7 @@ import { demo, gate } from "../demo";
 import { loadCatalogue, paperPath } from "@/lib/demo/index";
 import { runJob } from "@/lib/jobs/pipeline";
 import type { ProviderName } from "@/lib/config/env";
+import type { EpisodeFormat } from "@/lib/llm/generateEpisode";
 import type { TTSProviderName } from "@/lib/tts/index";
 
 export const runtime = "nodejs";
@@ -18,7 +19,8 @@ const MAX_PDF_BYTES = 25 * 1024 * 1024;
 
 export async function GET() {
   // Results carry a whole episode; the list only needs the state.
-  return NextResponse.json(store.list().map(({ result: _r, ...rest }) => rest));
+  const jobs = await store.list();
+  return NextResponse.json(jobs.map(({ result: _r, ...rest }) => rest));
 }
 
 export async function POST(req: Request) {
@@ -47,6 +49,11 @@ export async function POST(req: Request) {
   const provider = demo.enabled
     ? undefined
     : ((form.get("provider") as ProviderName | null) ?? undefined);
+  // Anything unrecognized falls back to the dialogue rather than erroring: the
+  // format changes how an episode sounds, not whether one can be made.
+  const asked_format = form.get("format");
+  const format: EpisodeFormat =
+    asked_format === "solo" || asked_format === "eli5" ? asked_format : "dialogue";
 
   if (demo.enabled) {
     const admission = gate.admit();
@@ -58,7 +65,7 @@ export async function POST(req: Request) {
     }
   }
 
-  const job = store.create({ minutes, provider, verify, revise });
+  const job = await store.create({ minutes, provider, verify, revise, format });
   await mkdir(AUDIO_DIR, { recursive: true });
 
   // Deliberately not awaited: the response returns an id immediately and the
@@ -71,6 +78,7 @@ export async function POST(req: Request) {
     ttsProvider: (form.get("tts") as TTSProviderName | null) ?? undefined,
     verify,
     revise,
+    format,
     paperId: input.paperId,
     paperTitle: input.paperTitle,
     audioPath: join(AUDIO_DIR, `${job.id}.wav`),
@@ -106,7 +114,10 @@ async function uploadedPaper(form: FormData): Promise<PaperInput> {
 async function demoPaper(form: FormData): Promise<PaperInput> {
   const id = form.get("paper");
   if (typeof id !== "string") {
-    return { error: "This deployment runs its own papers. Pick one from the list.", status: 400 };
+    return {
+      error: "This deployment runs its own papers. Pick one from the list.",
+      status: 400,
+    };
   }
 
   // Checked against the catalogue rather than trusted as a filename, so the id
@@ -120,5 +131,9 @@ async function demoPaper(form: FormData): Promise<PaperInput> {
   // The catalogue's title is authoritative for these three, which spares the
   // demo a paper introduced by whatever text happens to sit at the top of
   // page one.
-  return { pdf: await readFile(paperPath(paper.id)), paperId: paper.id, paperTitle: paper.title };
+  return {
+    pdf: await readFile(paperPath(paper.id)),
+    paperId: paper.id,
+    paperTitle: paper.title,
+  };
 }

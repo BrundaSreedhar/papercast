@@ -67,7 +67,12 @@ describe("recordEpisode", () => {
           evidence: "the central constraint has moved to the network",
           specific: false,
         },
-        { turn: 4, claim: "Aurora uses eight replicas", verdict: "contradicted", specific: true },
+        {
+          turn: 4,
+          claim: "Aurora uses eight replicas",
+          verdict: "contradicted",
+          specific: true,
+        },
       ],
     });
     const items = l.papers.aurora!.learned;
@@ -96,7 +101,10 @@ describe("recordEpisode", () => {
     // which is worse than offering no jump at all.
     const l = recordEpisode(emptyLedger(), {
       ...base,
-      episode: { ...EPISODE, keyPoints: ["Something the dialogue never discusses at all"] },
+      episode: {
+        ...EPISODE,
+        keyPoints: ["Something the dialogue never discusses at all"],
+      },
       timings: [{ turnIndex: 0, speaker: "host", startMs: 0, endMs: 4000, chunks: 1 }],
     });
     expect(l.papers.aurora!.learned[0]!.startMs).toBeUndefined();
@@ -130,7 +138,9 @@ describe("recordEpisode", () => {
         },
       ],
     });
-    const item = second.papers.aurora!.learned.find((i) => i.text.includes("bottleneck"))!;
+    const item = second.papers.aurora!.learned.find((i) =>
+      i.text.includes("bottleneck"),
+    )!;
     expect(item.provenance).toBe("verified");
     expect(item.firstSeen).toBe(first.papers.aurora!.learned[0]!.firstSeen);
   });
@@ -184,7 +194,9 @@ describe("openGaps", () => {
 describe("suggestedReadings", () => {
   it("suggests works the studied papers actually cite", () => {
     const s = suggestedReadings(recordEpisode(emptyLedger(), base));
-    expect(s.map((x) => x.title)).toContain("Spanner: Google's globally distributed database");
+    expect(s.map((x) => x.title)).toContain(
+      "Spanner: Google's globally distributed database",
+    );
     expect(s[0]!.citedBy).toEqual(["Amazon Aurora"]);
   });
 
@@ -197,7 +209,11 @@ describe("suggestedReadings", () => {
         ...PAPER,
         title: "Another Paper",
         references: [
-          { raw: "…", title: "Spanner: Google's globally distributed database", year: 2012 },
+          {
+            raw: "…",
+            title: "Spanner: Google's globally distributed database",
+            year: 2012,
+          },
         ],
       },
     });

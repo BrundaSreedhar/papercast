@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
-  const path = store.get(id)?.result?.audioPath;
+  const path = (await store.get(id))?.result?.audioPath;
   if (!path) return new Response("No audio for this job.", { status: 404 });
 
   // Streamed rather than buffered: an episode is tens of megabytes of PCM.

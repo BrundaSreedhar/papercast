@@ -58,7 +58,9 @@ export const CoverageSchema = z.object({
   results: z
     .array(
       z.object({
-        contribution: z.string().describe("The expected contribution, repeated verbatim."),
+        contribution: z
+          .string()
+          .describe("The expected contribution, repeated verbatim."),
         mentioned: z
           .boolean()
           .describe("True if the episode conveys this idea, even in different words."),
