@@ -3,10 +3,26 @@ import { askPaper, type ChatTurn } from "@/lib/chat/index";
 import { getEpisode } from "@/lib/library/store";
 import { getProvider } from "@/lib/llm/index";
 import { toJobError } from "@/lib/jobs/errors";
-import type { ProviderName } from "@/lib/config/env";
+import { activeProvider, type ProviderName } from "@/lib/config/env";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/**
+ * Whether sending part of the paper beats sending all of it.
+ *
+ * For a self-hosted model, yes, and not as an optimisation: the stock qwen2:7b
+ * defaults to a 4,096-token window, and a paper of seventeen thousand tokens
+ * fails outright against it. Retrieval is what makes a small model able to
+ * answer at all.
+ *
+ * For a hosted provider, no. They cache the prefix, so the whole paper costs
+ * almost nothing after the first question, and more context is strictly better
+ * for an answer that has to be right.
+ */
+function retrievalPays(provider: ProviderName | undefined): boolean {
+  return (provider ?? activeProvider()) === "open";
+}
 
 /** Questions long enough to be a question, short enough not to be a prompt. */
 const MAX_QUESTION = 1_000;
@@ -61,6 +77,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     const reply = await askPaper(record.paper, question, {
       provider: getProvider(name),
       history,
+      retrieve: retrievalPays(name),
     });
     return NextResponse.json(reply);
   } catch (err) {
@@ -110,6 +127,7 @@ function streamAnswer(
         const reply = await askPaper(paper, question, {
           provider: getProvider(provider),
           history,
+          retrieve: retrievalPays(provider),
           onText: (soFar) => send("text", { text: soFar }),
         });
         send("done", reply);

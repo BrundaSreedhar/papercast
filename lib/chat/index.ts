@@ -20,6 +20,7 @@ import { FAITHFULNESS } from "../llm/generateEpisode";
 import type { LLMProvider, Usage } from "../llm/types";
 import { paperToText, type PaperStructure } from "../pdf/extract";
 import { PaperLocator, type Citation } from "../pdf/locate";
+import { retrieveForQuestion } from "./retrieve";
 
 /**
  * What kind of answer this is.
@@ -65,6 +66,13 @@ export interface PaperReply {
   answer: string;
   /** Which of the three kinds of answer this is. */
   kind: AnswerKind;
+  /**
+   * Section headings consulted, when only part of the paper was sent.
+   *
+   * Empty means the whole paper went, which is not the same as nothing being
+   * relevant — a reader has to be able to tell those apart.
+   */
+  consulted: string[];
   /** Where each supporting passage sits in the paper. Empty for background. */
   citations: Citation[];
   /**
@@ -121,16 +129,27 @@ export async function askPaper(
      * paper" before it is, and offering citations that may still be discarded.
      */
     onText?: (soFar: string) => void;
+    /**
+     * Send only the sections the question needs, rather than the whole paper.
+     *
+     * Worth it for a small local model, where reading the paper is most of the
+     * latency and most of what it has to attend to. Not worth it where the
+     * provider caches the prefix, since the paper is then nearly free and more
+     * context is strictly better.
+     */
+    retrieve?: boolean;
   },
 ): Promise<PaperReply> {
   const history = (opts.history ?? []).slice(-HISTORY_TURNS);
+  const selected = opts.retrieve ? retrieveForQuestion(paper, question) : undefined;
+  const context = selected ? selected.text : paperToText(paper);
   const conversation = history
     .map((t) => `${t.role === "user" ? "READER" : "YOU"}: ${t.content}`)
     .join("\n");
 
   const result = await opts.provider.generateStructured({
     system: SYSTEM,
-    cacheableContext: `SOURCE PAPER\n\n${paperToText(paper)}`,
+    cacheableContext: `SOURCE PAPER\n\n${context}`,
     user: conversation
       ? `Earlier in this conversation:\n${conversation}\n\nThe reader now asks: ${question}`
       : `The reader asks: ${question}`,
@@ -152,6 +171,7 @@ export async function askPaper(
     answer: result.data.answer,
     kind,
     citations,
+    consulted: selected && !selected.whole ? selected.sections : [],
     grounded: kind === "from-paper" && citations.length > 0,
     usage: result.usage,
   };

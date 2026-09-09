@@ -73,10 +73,20 @@ inside a bibliography would produce a confident citation to a page nobody read.
 A match below the confidence floor returns nothing: a wrong page is worse than
 no page.
 
-**Extraction** is section-aware rather than chunked — modern context windows
-swallow most papers whole. `PaperSection.content` is rebuilt from filtered
-lines, not sliced, so provenance is tracked per line (`SourceLine.at`) to make
-page lookup possible.
+**Extraction** is section-aware rather than chunked. `PaperSection.content` is
+rebuilt from filtered lines, not sliced, so provenance is tracked per line
+(`SourceLine.at`) to make page lookup possible.
+
+**Generation and answering treat the paper differently, on purpose.** Writing an
+episode gets the whole paper: a four-minute summary assembled from retrieved
+fragments would miss most of what the paper argues, and coverage is what stops
+faithfulness rewarding silence. Answering a question retrieves
+(`lib/chat/retrieve.ts`, BM25 over sections, no model or key) when the provider
+is `open`. That is not an optimisation — the stock `qwen2:7b` defaults to a
+4,096-token window and a 17k-token paper fails against it outright, while the
+same question answers correctly from retrieved sections. Hosted providers keep
+the whole paper, since they cache the prefix and more context is strictly
+better.
 
 ## The judge is not part of the main flow
 
