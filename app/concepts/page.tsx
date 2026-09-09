@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getEpisode, listEpisodes } from "@/lib/library/store";
 import { paperToText } from "@/lib/pdf/extract";
 import { buildConceptMap, conceptsFor, sharedConcepts } from "@/lib/concepts/index";
+import { findSimilar } from "@/lib/concepts/similar";
 import { ConceptGraph } from "@/app/components/ConceptGraph";
 
 export const runtime = "nodejs";
@@ -29,6 +30,17 @@ export default async function Concepts() {
   }
 
   const map = buildConceptMap(episodes);
+  // Related-but-not-identical links, when a local embedding model is available
+  // to find them. Absent silently when it is not: the map is still the map.
+  const similar = await findSimilar(episodes.flatMap((e) => e.concepts)).catch(() => []);
+  // Two ideas an episode already covers together are joined by a solid line, and
+  // a dashed one over the top says nothing new. What is worth drawing is the
+  // pair no episode covers together: that is the link a shared word could never
+  // have found.
+  const joined = new Set(map.edges.map((e) => `${e.a}|${e.b}`));
+  const related = similar.filter(
+    (r) => !joined.has(`${r.a}|${r.b}`) && !joined.has(`${r.b}|${r.a}`),
+  );
   const shared = sharedConcepts(map);
   const titles = Object.fromEntries(episodes.map((e) => [e.id, e.paperTitle]));
 
@@ -59,9 +71,11 @@ export default async function Concepts() {
         {shared.length > 0
           ? `, ${shared.length} of them shared between more than one.`
           : ". Nothing is shared between episodes yet; that needs two papers that overlap."}
+        {related.length > 0 &&
+          ` ${related.length} more read as being about the same thing without sharing words.`}
       </p>
 
-      <ConceptGraph map={map} titles={titles} />
+      <ConceptGraph map={map} titles={titles} related={related} />
 
       <section style={{ marginTop: "2rem" }}>
         <h2 className="section-label">Episodes by concept</h2>

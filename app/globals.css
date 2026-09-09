@@ -1101,6 +1101,10 @@ audio {
 }
 
 .graph-detail {
+  position: sticky;
+  bottom: 0.75rem;
+  z-index: 2;
+  box-shadow: 0 2px 12px rgb(0 0 0 / 0.06);
   min-height: 2.6rem;
   margin-top: 0.5rem;
   padding: 0.6rem 0.8rem;
@@ -1118,6 +1122,16 @@ audio {
 }
 .graph-detail span {
   color: var(--muted);
+}
+.graph-detail a,
+.concept-episodes a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.graph-detail a:hover,
+.concept-episodes a:hover {
+  color: var(--ink);
 }
 
 .section-label {
@@ -1272,4 +1286,22 @@ audio {
 }
 .node:hover .dot {
   stroke-width: 3;
+}
+
+/* The list is the same information as the map, so a pinned idea is marked in
+   both rather than only where the pointer happens to be. */
+.concept-list li.picked {
+  background: var(--active-bg);
+  border-radius: var(--radius);
+  padding: 0.5rem 0.6rem;
+}
+/* A dashed edge is a weaker claim than a solid one: two ideas that read as the
+   same thing, rather than two an episode actually covered together. */
+.edge.related {
+  stroke: var(--accent);
+  stroke-dasharray: 3 4;
+  opacity: 0.4;
+}
+.edge.related.lit {
+  opacity: 0.75;
 }

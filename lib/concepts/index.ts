@@ -25,6 +25,15 @@ export interface Concept {
   term: string;
   /** How strongly this episode is about it, 0–1 within the episode. */
   weight: number;
+  /**
+   * The sentence the term was found in.
+   *
+   * Two words carry almost nothing on their own: embedded bare, "crash
+   * recovery" and "multi-head attention" score as similar as "transformer" and
+   * "multi-head attention" do. With the sentence around them the same pairs
+   * separate cleanly, so the context travels with the term.
+   */
+  context: string;
 }
 
 export interface ConceptNode {
@@ -79,13 +88,15 @@ const STOP = new Set(
  * a map of them tells you nothing about what the paper is about.
  */
 const NOT_A_THING = new Set(
-  ("powerful suitable capable effective efficient significant substantial considerable" +
+  (
+    "powerful suitable capable effective efficient significant substantial considerable" +
     " expensive cheap chatty robust scalable simple complex novel important useful better" +
     " best worse worst greater lower higher larger smaller faster slower cheaper" +
     " advantages benefits drawbacks limitations improvements gains" +
     " offer offers offering provide provides providing enable enables enabling allow allows" +
     " allowing achieve achieves achieving dispensing expect expects reducing reduces" +
-    " improving improves increasing increases").split(" "),
+    " improving improves increasing increases"
+  ).split(" "),
 );
 
 /**
@@ -94,9 +105,11 @@ const NOT_A_THING = new Set(
  * word as forbidden everywhere truncated it to "small language".
  */
 const HEAD_NOUNS = new Set(
-  ("model models system systems method methods approach approaches architecture architectures" +
+  (
+    "model models system systems method methods approach approaches architecture architectures" +
     " mechanism mechanisms network networks layer layers service services protocol protocols" +
-    " technique techniques strategy strategies framework frameworks").split(" "),
+    " technique techniques strategy strategies framework frameworks"
+  ).split(" "),
 );
 
 /** An adverb at either end is always modifying, never naming. */
@@ -176,9 +189,12 @@ export function conceptsFor(
 ): Concept[] {
   const paper = paperText.toLowerCase();
   const counts = new Map<string, number>();
+  const context = new Map<string, string>();
 
   // Key points count double: they are already a distillation of the episode,
   // where the summary is prose and repeats connective words.
+  // Sentences, so a term can remember which one it came from.
+  const sentences = [...keyPoints, ...summary.split(/(?<=[.!?])\s+/)].filter(Boolean);
   for (const [text, factor] of [
     [keyPoints.join(". "), 2],
     [summary, 1],
@@ -190,6 +206,10 @@ export function conceptsFor(
       if (!term.includes(" ") && occurrences(paper, term) < MIN_SINGLE_WORD_USES)
         continue;
       counts.set(term, (counts.get(term) ?? 0) + factor);
+      if (!context.has(term)) {
+        const found = sentences.find((line) => line.toLowerCase().includes(term));
+        if (found) context.set(term, found.trim());
+      }
     }
   }
   if (counts.size === 0) return [];
@@ -229,7 +249,11 @@ export function conceptsFor(
   const scored = kept;
 
   const top = scored[0]?.raw ?? 1;
-  return scored.map(({ term, raw }) => ({ term, weight: raw / top }));
+  return scored.map(({ term, raw }) => ({
+    term,
+    weight: raw / top,
+    context: context.get(term) ?? term,
+  }));
 }
 
 /**

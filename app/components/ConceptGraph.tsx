@@ -37,9 +37,12 @@ const at = (n: number): number => Math.round(n * 100) / 100;
 export function ConceptGraph({
   map,
   titles,
+  related = [],
 }: {
   map: ConceptMap;
   titles: Record<string, string>;
+  /** Concepts that mean roughly the same thing without sharing words. */
+  related?: { a: string; b: string; score: number }[];
 }) {
   // Hover explores, a click pins. Without pinning the panel empties the moment
   // the pointer leaves, which makes the episode links under it unreachable.
@@ -111,6 +114,30 @@ export function ConceptGraph({
             />
           );
         })}
+
+        {/*
+          Drawn dashed and separately from the solid edges, because they are a
+          different claim: a solid line means one episode covered both, which is
+          a fact, and a dashed one means the two read as being about the same
+          thing, which is a judgement.
+        */}
+        {related
+          .filter((r) => positions.has(r.a) && positions.has(r.b))
+          .map((r) => {
+            const a = positions.get(r.a)!;
+            const b = positions.get(r.b)!;
+            const lit = !active || (active.has(r.a) && active.has(r.b));
+            return (
+              <line
+                key={`~${r.a}|${r.b}`}
+                x1={a.x}
+                y1={a.y}
+                x2={b.x}
+                y2={b.y}
+                className={lit ? "edge related lit" : "edge related"}
+              />
+            );
+          })}
 
         {terms.map((c) => {
           const p = positions.get(c.term)!;
