@@ -8,13 +8,9 @@
  * every commit. The LLM judge is reserved for what genuinely needs judgement.
  */
 import { EpisodeSchema } from "../llm/schema";
-import { targetTurnCount } from "../llm/generateEpisode";
+import { measureLength, targetTurnCount } from "../llm/length";
 import { paperToText } from "../pdf/extract";
 import type { CheckContext, CheckResult, DeterministicReport } from "./types";
-
-const WORDS_PER_MINUTE = 150;
-/** Episodes shorter than this fraction of target are treated as collapsed. */
-const MIN_LENGTH_RATIO = 0.7;
 
 function ok(id: string, label: string, severity: CheckResult["severity"]): CheckResult {
   return { id, label, passed: true, severity };
@@ -31,10 +27,6 @@ function fail(
 
 function dialogueText(ctx: CheckContext): string {
   return ctx.episode.turns.map((t) => t.text).join(" ");
-}
-
-function wordCount(s: string): number {
-  return (s.trim().match(/\S+/g) ?? []).length;
 }
 
 /**
@@ -166,15 +158,18 @@ export function checkTurnCount(ctx: CheckContext): CheckResult {
 export function checkWordCount(ctx: CheckContext): CheckResult {
   const id = "word-count";
   const label = "Reaches the spoken-length target";
-  const target = ctx.minutes * WORDS_PER_MINUTE;
-  const actual = wordCount(dialogueText(ctx));
-  return actual >= target * MIN_LENGTH_RATIO
+  // The same measure the writer uses, so a grader can never disagree with the
+  // generator about what was asked for — and measured in characters, because
+  // words per minute swings 37% between an ELI5 episode and a solo one while
+  // characters per minute holds within 6%.
+  const got = measureLength(ctx.episode, ctx.minutes, episodeFormat(ctx.episode));
+  return !got.collapsed
     ? ok(id, label, "warning")
     : fail(
         id,
         label,
         "warning",
-        `${actual} words against a ${target}-word target (${Math.round((actual / target) * 100)}%).`,
+        `${got.words} words, about ${got.estimatedMinutes.toFixed(1)} of the ${ctx.minutes} minutes asked for (${Math.round(got.ratio * 100)}%).`,
       );
 }
 

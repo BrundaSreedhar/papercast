@@ -385,7 +385,7 @@ describe("length checks", () => {
   it("flags an under-length episode", () => {
     const r = checkWordCount(ctx([t("host", "too short")]));
     expect(r.passed).toBe(false);
-    expect(r.detail).toContain("600-word target");
+    expect(r.detail).toContain("of the 4 minutes asked for");
   });
 });
 

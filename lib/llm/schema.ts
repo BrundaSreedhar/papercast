@@ -35,6 +35,13 @@ export const EpisodeSchema = z.object({
     ),
 });
 
+/**
+ * Which voice arrangement an episode uses. Part of the output contract rather
+ * than of the writer, because the schema descriptions, the length targets and
+ * the deterministic checks all key off it.
+ */
+export type EpisodeFormat = "dialogue" | "solo" | "eli5";
+
 export type DialogueTurn = z.infer<typeof DialogueTurnSchema>;
 export type Episode = z.infer<typeof EpisodeSchema>;
 

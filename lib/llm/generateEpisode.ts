@@ -10,13 +10,37 @@ import {
   type Episode,
 } from "./schema";
 import type { LLMProvider, Usage } from "./types";
+import { FAITHFULNESS, NO_HYPE } from "./promptShared";
+import {
+  estimateOutputTokens,
+  measureLength,
+  targetTurnCount,
+  wordsPerMinuteFor,
+  wordTargetFor,
+  type LengthReport,
+} from "./length";
+import { appendTurns, continueEpisode } from "./continueEpisode";
+import type { EpisodeFormat } from "./schema";
 
-/** Average speaking rate used to translate target minutes into a word budget. */
-const WORDS_PER_MINUTE = 150;
+// Re-exported so the many existing importers of these names keep working; they
+// live in ./length and ./promptShared now.
+export { FAITHFULNESS, estimateOutputTokens, targetTurnCount, wordsPerMinuteFor };
+export type { EpisodeFormat };
 
 export interface GenerateEpisodeOptions {
   /** Target spoken length of the dialogue, in minutes. Default 10. */
   minutes?: number;
+  /**
+   * Extra calls allowed to finish an episode that came back short. Default 1.
+   *
+   * Zero on a run that hits its target, which is every run on a capable model,
+   * so this is not a cost every generation pays — it is a cost paid exactly
+   * when the alternative is delivering a third of an episode. Set to 0 to
+   * accept whatever the first call produced.
+   */
+  maxContinuations?: number;
+  /** Called after each continuation, with the length as it now stands. */
+  onContinuation?: (length: LengthReport) => void;
   /** Inject a provider (for tests/overrides); defaults to env selection. */
   provider?: LLMProvider;
   /** Name of the show. Fixed here so the model cannot invent one. */
@@ -41,6 +65,16 @@ export interface EpisodeResult {
   usage: Usage;
   retries: number;
   truncatedInput: boolean;
+  /**
+   * What was asked for against what arrived, measured after any continuation.
+   *
+   * Always present, so a caller cannot forget to ask. `length.short` is still
+   * true when a continuation ran and did not close the gap — the episode is
+   * delivered either way, and saying so is the point.
+   */
+  length: LengthReport;
+  /** Continuation calls made. Zero on a run that hit its target first time. */
+  continuations: number;
 }
 
 /** Generate a faithful two-host podcast episode from a structured paper. */
@@ -58,7 +92,7 @@ export async function generateEpisode(
   const truncatedInput = fullText.length > maxInputChars;
   const paperText = truncatedInput ? fullText.slice(0, maxInputChars) : fullText;
 
-  const wordTarget = minutes * WORDS_PER_MINUTE;
+  const wordTarget = wordTargetFor(minutes, format);
   const system = buildSystemPrompt({
     minutes,
     wordTarget,
@@ -83,29 +117,63 @@ export async function generateEpisode(
     temperature: 0.6,
   });
 
+  let episode = result.data;
+  let usage = result.usage;
+  let length = measureLength(episode, minutes, format);
+  let continuations = 0;
+
+  /*
+   * Finish an episode that stopped early.
+   *
+   * Looping rather than making one call, because a model that under-ran once
+   * can under-run again, and bounded rather than until-satisfied, because a
+   * model that will not reach the target will not reach it on the fifth attempt
+   * either. The loop also stops the moment a continuation adds nothing: a pass
+   * that returns no usable turns has told us it has no more to say, and asking
+   * again is spending money to be told so twice.
+   */
+  const maxContinuations = opts.maxContinuations ?? 1;
+  while (length.short && continuations < maxContinuations) {
+    const before = episode.turns.length;
+    const continued = await continueEpisode(paper, episode, {
+      provider,
+      wordsWanted: Math.max(50, length.wordTarget - length.words),
+      turnsWanted: Math.max(1, length.turnTarget - length.turns),
+      format,
+      showName,
+      maxInputChars,
+    });
+    continuations += 1;
+    usage = addUsage(usage, continued.usage);
+    episode = appendTurns(episode, continued.turns, format);
+    if (episode.turns.length === before) break;
+    length = measureLength(episode, minutes, format);
+    opts.onContinuation?.(length);
+  }
+
   return {
-    episode: result.data,
+    episode,
     provider: result.provider,
     model: result.model,
-    usage: result.usage,
+    usage,
     retries: result.retries,
     truncatedInput,
+    length,
+    continuations,
   };
 }
 
-export type EpisodeFormat = "dialogue" | "solo" | "eli5";
-
-/**
- * The faithfulness rules, which do not depend on how many voices the episode
- * has. Shared verbatim so a change to what counts as honest can never apply to
- * one format and not the other.
- */
-export const FAITHFULNESS = `FAITHFULNESS — this is the top priority:
-- Use ONLY information contained in the provided paper. Do not add outside facts, prior knowledge, comparisons, or citations that are not in the text.
-- Never invent numbers, results, author names, dataset names, or references. If a detail isn't in the paper, don't state it.
-- If the paper is ambiguous or silent on something, either omit it or say the paper does not specify — do not fill the gap with a guess.
-- Prefer the paper's own framing and terminology; spell out each acronym the first time you use it.
-- The source may end with a "Figures and tables" section describing what the paper's diagrams and tables show. Those descriptions were produced by a model reading the page, not quoted from the paper, so treat them as slightly weaker evidence: use them to explain how something is structured or what a result looked like, attribute them as what the figure shows, and do not state a number from a figure unless the description gives it explicitly.`;
+/** Token counts from two calls, so a continued episode reports one bill. */
+function addUsage(a: Usage, b: Usage): Usage {
+  const add = (x?: number, y?: number) =>
+    x === undefined && y === undefined ? undefined : (x ?? 0) + (y ?? 0);
+  return {
+    inputTokens: add(a.inputTokens, b.inputTokens),
+    outputTokens: add(a.outputTokens, b.outputTokens),
+    cacheReadTokens: add(a.cacheReadTokens, b.cacheReadTokens),
+    cacheWriteTokens: add(a.cacheWriteTokens, b.cacheWriteTokens),
+  };
+}
 
 const figuresLine = (hasFigures?: boolean) =>
   hasFigures
@@ -145,7 +213,7 @@ ${FAITHFULNESS}
 FORMAT AND LENGTH — both requirements are mandatory:
 - Produce a summary (problem, approach, key results, limitations), a list of concise key points, and the episode as a two-host dialogue.
 - The dialogue must contain at least ${targetTurns} turns, strictly alternating between the host and the guest. A turn is one person speaking, typically two to four sentences — not a monologue.
-- The dialogue must total roughly ${wordTarget} words (about ${minutes} minutes at ${WORDS_PER_MINUTE} words/minute). This is a real target, not an upper bound; a short episode is a failed one.
+- The dialogue must total roughly ${wordTarget} words (about ${minutes} minutes of speech). This is a real target, not an upper bound; a short episode is a failed one.
 - The host guides the conversation and asks the questions a curious listener would ask. The guest has read the paper closely and answers them, one idea at a time.
 - The host opens with a brief welcome and closes with a short wrap-up. No music, sound effects, or stage directions.
 - Write spoken language: contractions, short sentences, no markdown, no bullet points inside the dialogue.
@@ -183,7 +251,7 @@ function soloPrompt(args: {
 ${FAITHFULNESS}
 
 STRUCTURE — tell it as a story, in this order:
-- THE WELCOME: two or three sentences before anything technical. Greet the listener warmly, say what paper this is and who wrote it, and give them a reason to care about the next few minutes. Speak to one person, not an audience. Warm does not mean padded, and it does not mean hyped: no "buckle up", no "dive"/"diving into", no "unpack", no throat-clearing about how fascinating the topic is. Do not call the work groundbreaking, revolutionary, or a paradigm shift unless the paper says so itself — describing a paper as important is a claim about it, and it is not yours to make.
+- THE WELCOME: two or three sentences before anything technical. Greet the listener warmly, say what paper this is and who wrote it, and give them a reason to care about the next few minutes. Speak to one person, not an audience. Warm does not mean padded, and it does not mean hyped: no "buckle up", no "dive"/"diving into", no "unpack", no throat-clearing about how fascinating the topic is. ${NO_HYPE}
 - THE HOOK: then the real-world question or the surprising problem this paper takes on. Take it from the paper's own motivation, not from what you know about the field.
 - THE CONTEXT: what earlier approaches could not do, or what gap the paper says existed — only as the paper describes it.
 - THE CORE: what the researchers actually did and what they found, as a logical progression rather than a list of results. This is the longest part of the episode.
@@ -193,7 +261,7 @@ FORMAT AND LENGTH — both requirements are mandatory:
 - Produce a summary (problem, approach, key results, limitations), a list of concise key points, and the episode itself.
 - The episode is one continuous monologue. Deliver it as at least ${targetTurns} turns where EVERY turn has the speaker "narrator" — each turn is one beat of the talk, typically three to six sentences. There is no second speaker, and no turn may use "host" or "guest".
 - The turns are read back to back as uninterrupted speech, so each one must continue directly from the last. Never re-introduce the topic, re-greet the listener, or restate what was just said.
-- The episode must total roughly ${wordTarget} words (about ${minutes} minutes at ${WORDS_PER_MINUTE} words/minute). This is a real target, not an upper bound; a short episode is a failed one.
+- The episode must total roughly ${wordTarget} words (about ${minutes} minutes of speech). This is a real target, not an upper bound; a short episode is a failed one.
 - Explain jargon the moment you use it, with a one-line analogy where that earns its place. Never leave a technical term standing on its own.
 - The voice is warm throughout, not only at the open: talk to the listener, use "you" where it is natural, and let curiosity show. Close by telling them what they now know, briefly, rather than stopping mid-thought.
 - Write spoken language: contractions, short sentences, no markdown, no bullet points, no headings.
@@ -255,7 +323,7 @@ FORMAT AND LENGTH — both requirements are mandatory:
 - Produce a summary (problem, approach, key results, limitations) and a list of concise key points. These two stay plain, accurate and grown-up — they are the record. Only the spoken episode below is simplified.
 - The episode is one continuous story. Deliver it as at least ${targetTurns} turns where EVERY turn has the speaker "narrator" — each turn is one beat of the story. There is no second speaker, and no turn may use "host" or "guest".
 - The turns are read back to back as uninterrupted speech, so each must continue from the last. Never re-greet the listener or restart the story.
-- The episode must total roughly ${wordTarget} words (about ${minutes} minutes at ${WORDS_PER_MINUTE} words/minute). This is a real target, not an upper bound.
+- The episode must total roughly ${wordTarget} words (about ${minutes} minutes of speech). This is a real target, not an upper bound.
 - Short sentences. Warm, enthusiastic, gentle. Speak to one child, not to a room.
 - Ban academic buzzwords and heavy vocabulary. If a technical term genuinely cannot be avoided, say it once, then immediately give the everyday comparison for it and use the simple words from then on.
 - Write NO stage directions, tone cues, or bracketed annotations of any kind — no [smiles], no [whispers], no [makes a zooming sound]. This text is fed straight to a speech synthesizer, which reads such marks aloud as words. Carry the warmth in the words themselves.${figuresLine(args.hasFigures)}
@@ -273,45 +341,4 @@ export function buildUserContent(paperText: string, truncated: boolean): string 
     ? "\n\n[Note: the paper text below was truncated to fit; base the episode only on what is present.]"
     : "";
   return `Here is the paper to adapt into a podcast episode.${note}\n\n${paperText}`;
-}
-
-/**
- * Minimum dialogue turns for a given length. Roughly 3–4 exchanges a minute
- * keeps the pacing conversational; without an explicit floor, models collapse
- * the episode into a few long monologues.
- */
-export function targetTurnCount(
-  minutes: number,
-  format: EpisodeFormat = "dialogue",
-): number {
-  // A monologue beat runs three to six sentences where a dialogue turn runs two
-  // to four, so the same minutes need fewer of them. Asking for the dialogue
-  // count would chop the talk into fragments that read as stammering.
-  // A child-facing beat is shorter than an adult monologue beat, which is itself
-  // longer than a dialogue turn.
-  const perMinute = format === "eli5" ? 2.5 : format === "solo" ? 2 : 3.5;
-  const floor = format === "dialogue" ? 6 : 4;
-  return Math.min(60, Math.max(floor, Math.round(minutes * perMinute)));
-}
-
-/**
- * Output token budget for the whole structured result.
- *
- * The earlier version counted only spoken words and badly under-budgeted: the
- * model emits JSON, so every turn also carries `{"speaker":…,"text":…}`
- * scaffolding and escaping, and capable models write far longer summaries and
- * key points than a flat allowance assumes. Running out mid-object truncates
- * the tool call and produces a broken result rather than a shorter one, so this
- * is deliberately generous — max_tokens is a ceiling, not a reservation, and
- * unused budget costs nothing.
- */
-export function estimateOutputTokens(
-  minutes: number,
-  format: EpisodeFormat = "dialogue",
-): number {
-  const dialogueTokens = minutes * WORDS_PER_MINUTE * 1.5;
-  const turnOverhead = targetTurnCount(minutes, format) * 20;
-  const summaryAndKeyPoints = 1_200;
-  const total = (dialogueTokens + turnOverhead + summaryAndKeyPoints) * 1.35;
-  return Math.min(32_000, Math.max(4_000, Math.round(total)));
 }
