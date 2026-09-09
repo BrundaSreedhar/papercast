@@ -4,7 +4,7 @@
  * four spellings of one idea — because a busy map says less than a sparse one.
  */
 import { describe, it, expect } from "vitest";
-import { buildConceptMap, conceptsFor, sharedConcepts } from "./index";
+import { acronymExpansions, buildConceptMap, conceptsFor, sharedConcepts } from "./index";
 import type { EpisodeSummary } from "../library/types";
 
 /*
@@ -139,6 +139,38 @@ describe("conceptsFor", () => {
     ).map((c) => c.term);
     const family = terms.filter((t) => t.includes("crash") || t.includes("recovery"));
     expect(family).toHaveLength(1);
+  });
+
+  it("folds an acronym into what it stands for", () => {
+    // An acronym shares no words with its expansion, so grouping by overlap
+    // could never see that these are one idea, and the map carried both.
+    const paper =
+      "We take the position that small language models (SLMs) are the future. " +
+      "SLMs are sufficiently powerful. SLMs are cheaper to run. SLMs are flexible. " +
+      "Small language models suit agentic subtasks, and SLMs are easy to fine-tune.";
+    const terms = conceptsFor(
+      ["SLMs are sufficiently powerful.", "Small language models suit agentic subtasks."],
+      "",
+      paper,
+    ).map((c) => c.term);
+    expect(terms).toContain("small language models");
+    expect(terms).not.toContain("slms");
+  });
+
+  it("checks the initials rather than trusting anything in brackets", () => {
+    // Table extraction produces things like "Model BLEUTraining Cost (FLOPs)",
+    // which defines nothing.
+    const map = acronymExpansions(
+      "Model BLEUTraining Cost (FLOPs) and Amazon Web Services (AWS)",
+    );
+    expect(map.get("flop")).toBeUndefined();
+    expect(map.get("aws")).toBe("amazon web services");
+  });
+
+  it("knows the plural acronym, which is how prose writes it", () => {
+    const map = acronymExpansions("small language models (SLMs) are useful");
+    expect(map.get("slm")).toBe("small language models");
+    expect(map.get("slms")).toBe("small language models");
   });
 
   it("returns nothing rather than noise when there is nothing to find", () => {

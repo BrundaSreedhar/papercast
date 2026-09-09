@@ -117,7 +117,9 @@ const VERBS = new Set(
     "offer offers offering provide provides providing enable enables enabling allow allows" +
     " allowing achieve achieves achieving dispensing expect expects reducing reduces" +
     " improving improves increasing increases relies rely uses using replaces replace" +
-    " requires require produces produce lets let helps help"
+    " requires require produces produce lets let helps help" +
+    " suit suits suited work works run runs scale scales perform performs handle handles" +
+    " support supports become becomes remain remains"
   ).split(" "),
 );
 
@@ -208,6 +210,40 @@ function candidates(text: string): string[] {
   return out;
 }
 
+/**
+ * Acronyms the paper defines, mapped to what they stand for.
+ *
+ * An acronym shares no words with its expansion, so grouping by overlap can
+ * never see that "slms" and "small language models" are one idea, and the map
+ * carried both. Papers settle this themselves: the convention is to write the
+ * expansion once with the acronym in brackets after it, and every paper to hand
+ * does.
+ *
+ * The initials are checked rather than trusted, which also throws out the
+ * bracketed noise that table extraction produces — "Model BLEUTraining Cost
+ * (FLOPs)" is not a definition of anything.
+ */
+export function acronymExpansions(paperText: string): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const m of paperText.matchAll(
+    /((?:[A-Za-z][\w-]*\s+){1,6})\(([A-Z][A-Za-z]{1,6})\)/g,
+  )) {
+    const acronym = m[2]!;
+    const base = acronym.replace(/s$/, "");
+    const words = m[1]!.trim().split(/\s+/);
+    const take = words.slice(-base.length);
+    if (take.length !== base.length) continue;
+    if (take.map((w) => w[0]!.toLowerCase()).join("") !== base.toLowerCase()) continue;
+
+    const expansion = take.join(" ").toLowerCase();
+    const key = base.toLowerCase();
+    out.set(key, expansion);
+    // The plural acronym is how it is usually written in prose: "SLMs are".
+    out.set(`${key}s`, expansion);
+  }
+  return out;
+}
+
 /** How much a term earns for the paper having given it a section of its own. */
 const HEADING_BOOST = 3;
 
@@ -265,6 +301,22 @@ export function conceptsFor(
     }
   }
   if (counts.size === 0) return [];
+
+  /*
+   * Fold an acronym into the thing it stands for, before anything is grouped
+   * or ranked. The expansion is what survives: it is what a reader who has not
+   * read the paper can actually read.
+   */
+  const expansions = acronymExpansions(paperText);
+  for (const [term, count] of [...counts.entries()]) {
+    const expansion = expansions.get(term);
+    if (!expansion || expansion === term) continue;
+    counts.delete(term);
+    counts.set(expansion, (counts.get(expansion) ?? 0) + count);
+    if (!context.has(expansion) && context.has(term)) {
+      context.set(expansion, context.get(term)!);
+    }
+  }
 
   /*
    * One term per family, strongest first.
