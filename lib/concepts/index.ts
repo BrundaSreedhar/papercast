@@ -275,7 +275,7 @@ export function conceptsFor(
   limit = 8,
 ): Concept[] {
   const paper = paperText.toLowerCase();
-  const headingText = headings.join(" ยง ").toLowerCase();
+  const headingText = headings.join(" | ").toLowerCase();
   const counts = new Map<string, number>();
   const context = new Map<string, string>();
 
@@ -406,7 +406,7 @@ export function buildConceptMap(
     const terms = episode.concepts.map((c) => c.term).sort();
     for (let i = 0; i < terms.length; i++) {
       for (let j = i + 1; j < terms.length; j++) {
-        const key = `${terms[i]} ${terms[j]}`;
+        const key = `${terms[i]} ${terms[j]}`;
         const edge = edges.get(key) ?? { a: terms[i]!, b: terms[j]!, episodes: [] };
         edge.episodes.push(episode.id);
         edges.set(key, edge);
