@@ -25,7 +25,12 @@ export default async function Concepts() {
     if (!record) continue;
     episodes.push({
       ...summary,
-      concepts: conceptsFor(record.keyPoints, record.summary, paperToText(record.paper)),
+      concepts: conceptsFor(
+        record.keyPoints,
+        record.summary,
+        paperToText(record.paper),
+        record.paper.sections.map((section) => section.heading),
+      ),
     });
   }
 
