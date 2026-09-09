@@ -54,3 +54,6 @@ demo/papers/
 
 # saved episodes (the library)
 data/episodes/
+
+# cached concept embeddings
+data/embeddings/

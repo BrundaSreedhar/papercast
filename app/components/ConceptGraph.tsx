@@ -7,6 +7,17 @@ import type { ConceptMap } from "@/lib/concepts/index";
 const SIZE = 620;
 const CENTRE = SIZE / 2;
 const RADIUS = SIZE * 0.36;
+const MAX_NODES = 16;
+
+/**
+ * Coordinates are rounded before they reach the DOM.
+ *
+ * The server and the browser do not agree on the last bit of Math.cos, so an
+ * unrounded position renders as 503.2968701246867 on one and 503.2968701246866
+ * on the other, and React reports a hydration mismatch on every line in the
+ * graph. Two decimal places is far below a pixel and removes it entirely.
+ */
+const at = (n: number): number => Math.round(n * 100) / 100;
 
 /**
  * The library as a map of ideas.
@@ -26,13 +37,31 @@ const RADIUS = SIZE * 0.36;
 export function ConceptGraph({
   map,
   titles,
+  related = [],
 }: {
   map: ConceptMap;
   titles: Record<string, string>;
+  /** Concepts that mean roughly the same thing without sharing words. */
+  related?: { a: string; b: string; score: number }[];
 }) {
-  const [focused, setFocused] = useState<string | null>(null);
+  // Hover explores, a click pins. Without pinning the panel empties the moment
+  // the pointer leaves, which makes the episode links under it unreachable.
+  const [hovered, setHovered] = useState<string | null>(null);
+  const [pinned, setPinned] = useState<string | null>(null);
+  const focused = pinned ?? hovered;
 
-  const terms = map.concepts.slice(0, 24);
+  const shared = map.concepts.filter((c) => c.episodes.length > 1);
+  // One-off concepts are noise on a map whose subject is what connects: they
+  // are a list of one episode's topics drawn as a circle. They are hidden when
+  // there is enough shared material to be worth looking at, and shown when
+  // hiding them would leave an empty page.
+  const canFilter = shared.length >= 3;
+  const [sharedOnly, setSharedOnly] = useState(canFilter);
+  const visible = sharedOnly && canFilter ? shared : map.concepts;
+
+  // Sixteen labels is what fits around a circle before neighbours collide near
+  // the top and bottom, where they run almost horizontally.
+  const terms = visible.slice(0, MAX_NODES);
   const positions = new Map(
     terms.map((c, i) => {
       // Start at the top and go clockwise, so the strongest concept is where
@@ -41,8 +70,8 @@ export function ConceptGraph({
       return [
         c.term,
         {
-          x: CENTRE + Math.cos(angle) * RADIUS,
-          y: CENTRE + Math.sin(angle) * RADIUS,
+          x: at(CENTRE + Math.cos(angle) * RADIUS),
+          y: at(CENTRE + Math.sin(angle) * RADIUS),
           angle,
         },
       ];
@@ -59,7 +88,7 @@ export function ConceptGraph({
       )
     : null;
 
-  const node = map.concepts.find((c) => c.term === focused);
+  const node = visible.find((c) => c.term === focused);
 
   return (
     <div className="graph">
@@ -67,7 +96,7 @@ export function ConceptGraph({
         viewBox={`0 0 ${SIZE} ${SIZE}`}
         className="graph-svg"
         role="img"
-        aria-label={`A map of ${terms.length} concepts and the episodes that share them`}
+        aria-label={`A map of ${terms.length} ideas and the episodes that cover them`}
       >
         {edges.map((e) => {
           const a = positions.get(e.a)!;
@@ -86,6 +115,30 @@ export function ConceptGraph({
           );
         })}
 
+        {/*
+          Drawn dashed and separately from the solid edges, because they are a
+          different claim: a solid line means one episode covered both, which is
+          a fact, and a dashed one means the two read as being about the same
+          thing, which is a judgement.
+        */}
+        {related
+          .filter((r) => positions.has(r.a) && positions.has(r.b))
+          .map((r) => {
+            const a = positions.get(r.a)!;
+            const b = positions.get(r.b)!;
+            const lit = !active || (active.has(r.a) && active.has(r.b));
+            return (
+              <line
+                key={`~${r.a}|${r.b}`}
+                x1={a.x}
+                y1={a.y}
+                x2={b.x}
+                y2={b.y}
+                className={lit ? "edge related lit" : "edge related"}
+              />
+            );
+          })}
+
         {terms.map((c) => {
           const p = positions.get(c.term)!;
           const shared = c.episodes.length > 1;
@@ -97,9 +150,9 @@ export function ConceptGraph({
             <g
               key={c.term}
               className={dimmed ? "node dimmed" : "node"}
-              onMouseEnter={() => setFocused(c.term)}
-              onMouseLeave={() => setFocused(null)}
-              onClick={() => setFocused((f) => (f === c.term ? null : c.term))}
+              onMouseEnter={() => setHovered(c.term)}
+              onMouseLeave={() => setHovered(null)}
+              onClick={() => setPinned((f) => (f === c.term ? null : c.term))}
             >
               <circle
                 cx={p.x}
@@ -108,8 +161,8 @@ export function ConceptGraph({
                 className={shared ? "dot shared" : "dot"}
               />
               <text
-                x={p.x + Math.cos(p.angle) * 14}
-                y={p.y + Math.sin(p.angle) * 14}
+                x={at(p.x + Math.cos(p.angle) * 14)}
+                y={at(p.y + Math.sin(p.angle) * 14)}
                 textAnchor={flip ? "end" : "start"}
                 dominantBaseline="middle"
                 className={shared ? "label shared" : "label"}
@@ -120,6 +173,28 @@ export function ConceptGraph({
           );
         })}
       </svg>
+
+      <div className="graph-controls">
+        {canFilter ? (
+          <label className="graph-toggle">
+            <input
+              type="checkbox"
+              checked={sharedOnly}
+              onChange={(e) => setSharedOnly(e.target.checked)}
+            />
+            only ideas more than one episode covers
+          </label>
+        ) : (
+          <span className="sub" style={{ margin: 0 }}>
+            Showing everything: too few ideas are shared yet to filter by.
+          </span>
+        )}
+        {pinned && (
+          <button type="button" className="graph-clear" onClick={() => setPinned(null)}>
+            clear selection
+          </button>
+        )}
+      </div>
 
       <div className="graph-detail" aria-live="polite">
         {node ? (
@@ -136,8 +211,8 @@ export function ConceptGraph({
           </>
         ) : (
           <span className="sub" style={{ margin: 0 }}>
-            Hover a concept to see which episodes cover it. Filled circles are shared by
-            more than one.
+            Hover an idea to see which episodes cover it, or click to keep it selected.
+            Filled circles are shared by more than one episode.
           </span>
         )}
       </div>
