@@ -9,6 +9,15 @@
  * Here, a turn is the unit of synthesis, chunked further when it exceeds the
  * backend's limit, and every chunk's duration is measured rather than estimated.
  * Exceeding the limit is now impossible by construction rather than caught.
+ *
+ * A backend that fails partway takes the *whole episode* with it and the
+ * fallback starts again from turn one. Resuming on the other backend would be
+ * cheaper and is wrong twice over: the two speak in different voices, so the
+ * listener hears the presenter change mid-sentence, and they emit different
+ * sample rates — Piper follows its voice model at 22,050 Hz where Gemini
+ * returns 24,000 — which `joinWavs` refuses outright. Half-finished audio would
+ * become a hard failure at the join, one stage later and much harder to read.
+ * Redoing it locally costs seconds; Piper runs at about real time.
  */
 import type { Episode } from "../llm/schema";
 import { chunkForSynthesis } from "./chunk";
@@ -17,17 +26,48 @@ import type { EpisodeAudio, TTSProvider, TurnTiming } from "./types";
 
 export interface SynthesizeOptions {
   provider: TTSProvider;
+  /**
+   * Remakes the whole episode if `provider` fails.
+   *
+   * For hosted voices, which can be busy or down in a way a local one cannot.
+   * An episode has already cost model calls by the time synthesis starts, so
+   * losing it to a preview endpoint under load is a bad trade.
+   */
+  fallback?: TTSProvider;
   /** Silence between turns, which stops speakers running into each other. */
   gapMs?: number;
   /** Called after each turn so a caller can show progress on a long episode. */
   onProgress?: (done: number, total: number) => void;
+  /** Called when the primary has failed and the fallback is about to start. */
+  onFallback?: (error: Error, to: TTSProvider) => void;
 }
 
 export async function synthesizeEpisode(
   episode: Episode,
   opts: SynthesizeOptions,
 ): Promise<EpisodeAudio> {
-  const { provider, gapMs = 350, onProgress } = opts;
+  const { provider, fallback, gapMs = 350, onProgress, onFallback } = opts;
+
+  try {
+    return await synthesizeWith(episode, provider, gapMs, onProgress);
+  } catch (err) {
+    // Falling back to the same backend would just fail twice as slowly.
+    if (!fallback || fallback.name === provider.name) throw err;
+    const error = err instanceof Error ? err : new Error(String(err));
+    onFallback?.(error, fallback);
+    const audio = await synthesizeWith(episode, fallback, gapMs, onProgress);
+    // Recorded rather than hidden: an episode in a different voice from the one
+    // that was asked for should say so.
+    return { ...audio, fellBackFrom: provider.name, fallbackReason: error.message };
+  }
+}
+
+async function synthesizeWith(
+  episode: Episode,
+  provider: TTSProvider,
+  gapMs: number,
+  onProgress: SynthesizeOptions["onProgress"],
+): Promise<EpisodeAudio> {
   if (episode.turns.length === 0) throw new Error("Episode has no dialogue turns.");
 
   // One entry per synthesis call, plus a record of which turn produced it.

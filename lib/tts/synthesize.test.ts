@@ -166,3 +166,108 @@ describe("synthesizeEpisode", () => {
     expect(out.format).toBe("wav");
   });
 });
+
+describe("falling back to another backend", () => {
+  /** Fails on the nth call, so a mid-episode failure can be provoked. */
+  class FlakyTTS implements TTSProvider {
+    readonly name = "flaky";
+    readonly description = "flaky voice";
+    readonly format = "wav" as const;
+    readonly maxChars = 500;
+    calls = 0;
+    constructor(private readonly failOn: number) {}
+    async synthesizeChunk(text: string): Promise<Buffer> {
+      this.calls += 1;
+      if (this.calls >= this.failOn) throw new Error("high demand");
+      return buildWav(
+        { audioFormat: 1, channels: 1, sampleRate: 24000, bitsPerSample: 16 },
+        Buffer.alloc(text.length * 2),
+      );
+    }
+  }
+
+  /** A local backend at a different sample rate, as Piper really is. */
+  class LocalTTS implements TTSProvider {
+    readonly name = "piper";
+    readonly description = "local voice";
+    readonly format = "wav" as const;
+    readonly maxChars = 500;
+    calls = 0;
+    async synthesizeChunk(text: string): Promise<Buffer> {
+      this.calls += 1;
+      return buildWav(
+        { audioFormat: 1, channels: 1, sampleRate: 22050, bitsPerSample: 16 },
+        Buffer.alloc(text.length * 2),
+      );
+    }
+  }
+
+  const episode: Episode = {
+    summary: "s",
+    keyPoints: ["k"],
+    turns: [
+      { speaker: "host", text: "First turn." },
+      { speaker: "guest", text: "Second turn." },
+      { speaker: "host", text: "Third turn." },
+    ],
+  };
+
+  it("remakes the whole episode rather than resuming", async () => {
+    // Resuming would mix 24 kHz and 22.05 kHz segments, which joinWavs refuses
+    // outright — a recoverable synthesis failure would become a hard crash one
+    // stage later. It also swaps the voice mid-sentence.
+    const primary = new FlakyTTS(3);
+    const backup = new LocalTTS();
+
+    const out = await synthesizeEpisode(episode, { provider: primary, fallback: backup });
+
+    expect(backup.calls).toBe(3);
+    expect(out.provider).toBe("piper");
+    expect(out.audio.subarray(0, 4).toString()).toBe("RIFF");
+  });
+
+  it("says which backend was asked for and why it changed", async () => {
+    const out = await synthesizeEpisode(episode, {
+      provider: new FlakyTTS(2),
+      fallback: new LocalTTS(),
+    });
+    expect(out.fellBackFrom).toBe("flaky");
+    expect(out.fallbackReason).toMatch(/high demand/);
+    expect(out.voices).toBe("local voice");
+  });
+
+  it("tells the caller before it starts again", async () => {
+    const seen: string[] = [];
+    await synthesizeEpisode(episode, {
+      provider: new FlakyTTS(2),
+      fallback: new LocalTTS(),
+      onFallback: (err, to) => seen.push(`${to.name}: ${err.message}`),
+    });
+    expect(seen).toEqual(["piper: high demand"]);
+  });
+
+  it("leaves a successful run untouched", async () => {
+    const backup = new LocalTTS();
+    const out = await synthesizeEpisode(episode, {
+      provider: new FlakyTTS(99),
+      fallback: backup,
+    });
+    expect(backup.calls).toBe(0);
+    expect(out.fellBackFrom).toBeUndefined();
+  });
+
+  it("raises the original failure when there is nothing to fall back to", async () => {
+    await expect(
+      synthesizeEpisode(episode, { provider: new FlakyTTS(1) }),
+    ).rejects.toThrow(/high demand/);
+  });
+
+  it("does not fall back onto the backend that just failed", async () => {
+    // Retrying the same missing binary or the same busy endpoint is not a
+    // backup, it is the same failure taking twice as long.
+    const primary = new FlakyTTS(1);
+    await expect(
+      synthesizeEpisode(episode, { provider: primary, fallback: primary }),
+    ).rejects.toThrow(/high demand/);
+  });
+});

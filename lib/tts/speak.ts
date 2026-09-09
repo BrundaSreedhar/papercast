@@ -28,6 +28,22 @@ export interface SpokenText {
 /** A beat between sentences, so an answer does not run together. */
 const GAP_MS = 120;
 
+/**
+ * Which voice answers a listener's question.
+ *
+ * It has to be a voice from the episode. Answering a two-host episode as
+ * `narrator` gives a hosted backend a third voice the listener has never heard
+ * — the answer arrives from a stranger, mid-episode.
+ *
+ * For a dialogue that voice is the host. The schema's own division is that the
+ * host guides the conversation and the guest explains the paper, and this is
+ * the show turning to address the listener directly — the same move as the
+ * closing line that hands them back to the episode.
+ */
+export function answerVoiceFor(format: "dialogue" | "solo" | "eli5"): Speaker {
+  return format === "dialogue" ? "host" : "narrator";
+}
+
 export async function speak(
   text: string,
   provider: TTSProvider,

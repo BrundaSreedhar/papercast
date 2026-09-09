@@ -36,6 +36,16 @@ export interface EpisodeRecord {
   totalMs?: number;
   /** False when the run produced a transcript only. */
   hasAudio: boolean;
+  /**
+   * Which backend voiced this episode, and with which voices.
+   *
+   * Stored because answering a question out loud later has to sound like the
+   * episode it is about. Without it the answer is spoken by whatever
+   * `TTS_PROVIDER` happens to say today, so changing the setting silently gives
+   * every past episode a new narrator — which is exactly what happened.
+   */
+  ttsProvider?: string;
+  voices?: string;
   transcriptRecall?: number;
   review?: JobReview;
   cost?: JobCost;

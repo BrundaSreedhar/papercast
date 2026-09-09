@@ -4,7 +4,7 @@
  * outright rather than coming back shortened.
  */
 import { describe, it, expect } from "vitest";
-import { speak } from "./speak";
+import { answerVoiceFor, speak } from "./speak";
 import { buildWav } from "./wav";
 import type { Speaker, TTSProvider } from "./types";
 
@@ -59,7 +59,35 @@ describe("speak", () => {
     expect(tts.speakers).toEqual(["narrator"]);
   });
 
+  it("speaks as whoever the caller names", async () => {
+    const tts = new FakeTTS();
+    await speak("Anything.", tts, "host");
+    expect(tts.speakers).toEqual(["host"]);
+  });
+
   it("refuses empty text rather than producing a silent file", async () => {
     await expect(speak("   ", new FakeTTS())).rejects.toThrow(/nothing to say/i);
+  });
+});
+
+describe("answerVoiceFor", () => {
+  it("answers a two-host episode in a voice from that episode", () => {
+    // The bug: answering as "narrator" gave a hosted backend a third voice the
+    // listener had never heard, so the reply arrived from a stranger.
+    expect(answerVoiceFor("dialogue")).toBe("host");
+  });
+
+  it("narrates for the single-voice formats, which is the voice they use", () => {
+    expect(answerVoiceFor("solo")).toBe("narrator");
+    expect(answerVoiceFor("eli5")).toBe("narrator");
+  });
+
+  it("never picks a speaker the format does not contain", () => {
+    // Solo and ELI5 episodes are consecutive narrator turns; host or guest
+    // would be a voice that appears nowhere in them.
+    for (const format of ["solo", "eli5"] as const) {
+      expect(["narrator"]).toContain(answerVoiceFor(format));
+    }
+    expect(["host", "guest"]).toContain(answerVoiceFor("dialogue"));
   });
 });

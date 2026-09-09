@@ -13,9 +13,11 @@ import { randomUUID } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { extractPaper } from "../pdf/extract";
 import { generateEpisode } from "../llm/generateEpisode";
+import { describeShortfall } from "../llm/length";
 import { getProvider } from "../llm/index";
 import type { ProviderName } from "../config/env";
 import {
+  resolveFallbackTTS,
   resolveTTSProvider,
   synthesizeEpisode,
   type TTSProviderName,
@@ -194,6 +196,13 @@ async function runJobStages(
       minutes: input.minutes,
       provider: input.provider ? getProvider(input.provider) : undefined,
       format: input.format,
+      // A continuation is a second model call, so it is worth saying why the
+      // wait got longer rather than letting the bar sit still.
+      onContinuation: () =>
+        emit({
+          percent: overallPercent("scripting", 0.7, stages),
+          message: "The episode came back short — asking for the rest",
+        }),
     });
     // LLM spend accumulates across scripting and review; the store replaces cost
     // fields rather than adding to them, so the running total lives here. It
@@ -207,9 +216,19 @@ async function runJobStages(
       usd: estimateCost(generated.model, llmUsage),
     });
 
+    // Length used to be invisible: the only check on it lives in the eval
+    // harness, which an ordinary run never touches, so an episode that came
+    // back at a third of its length reached the listener with nothing anywhere
+    // saying so. It is reported here whether or not it is a problem, because a
+    // number a person can compare to what they asked for is the whole fix.
+    const { length } = generated;
+    const shortfall = describeShortfall(length);
     await update({
       percent: overallPercent("scripting", 1, stages),
-      message: `Wrote ${generated.episode.turns.length} turns`,
+      message:
+        `Wrote ${length.turns} turns · ${length.words} words (~${length.estimatedMinutes.toFixed(1)} min)` +
+        (generated.continuations > 0 ? ", after a continuation" : "") +
+        (shortfall ? ` — still short: ${shortfall}` : ""),
       cost: costSoFar(),
     });
 
@@ -314,8 +333,19 @@ async function runJobStages(
 
     await step("synthesizing", 0, "Recording the episode");
     const tts = await resolveTTSProvider(input.ttsProvider);
+    // A hosted voice can be busy or down in a way a local one cannot, and by
+    // this point the episode has already cost model calls. Losing it to a
+    // preview endpoint under load is the worse outcome, so a local backend
+    // remakes it rather than the job failing.
+    const backupTts = await resolveFallbackTTS(tts);
     const audio = await synthesizeEpisode(episode, {
       provider: tts,
+      fallback: backupTts,
+      onFallback: (err, to) =>
+        emit({
+          percent: overallPercent("synthesizing", 0, stages),
+          message: `${tts.name} could not record this — starting again with ${to.name}`,
+        }),
       onProgress: (done, total) =>
         emit({
           percent: overallPercent("synthesizing", done / total, stages),
@@ -331,7 +361,11 @@ async function runJobStages(
     });
     await update({
       percent: overallPercent("synthesizing", 1, stages),
-      message: `Recorded ${(audio.totalMs / 1000 / 60).toFixed(1)} minutes · ${checks.errors} audio errors`,
+      message:
+        `Recorded ${(audio.totalMs / 1000 / 60).toFixed(1)} minutes · ${checks.errors} audio errors` +
+        (audio.fellBackFrom
+          ? ` · ${audio.fellBackFrom} was unavailable, ${audio.provider} recorded it`
+          : ""),
       cost: { ttsCalls: audio.calls },
     });
 
@@ -386,6 +420,10 @@ async function runJobStages(
       keyPoints: episode.keyPoints,
       totalMs: audio.totalMs,
       hasAudio: true,
+      // What actually voiced it, which is not always what was configured: a
+      // hosted backend may have failed and the local one remade the episode.
+      ttsProvider: audio.provider,
+      voices: audio.voices,
       transcriptRecall,
       review,
       cost: { ...costSoFar(), ttsCalls: audio.calls },
