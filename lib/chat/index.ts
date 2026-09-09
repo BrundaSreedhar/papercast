@@ -144,7 +144,7 @@ export async function askPaper(
 ): Promise<PaperReply> {
   const history = (opts.history ?? []).slice(-HISTORY_TURNS);
   const selected = opts.retrieve
-    ? await withSpan("retrieve sections", { [TA.PAPERCAST_RETRIEVED]: true }, async () =>
+    ? await withSpan("retrieve sections", { [TA.PAPERCAST_RETRIEVED]: true }, () =>
         retrieveForQuestion(paper, question),
       )
     : undefined;
@@ -161,6 +161,7 @@ export async function askPaper(
       // What the model was given, which is the number that explains the wait.
       [TA.PAPERCAST_CONTEXT_CHARS]: context.length,
       [TA.PAPERCAST_RETRIEVED]: selected ? !selected.whole : false,
+      ...(selected ? { [TA.PAPERCAST_RETRIEVAL_METHOD]: selected.method } : {}),
     },
     () => answer(),
   );

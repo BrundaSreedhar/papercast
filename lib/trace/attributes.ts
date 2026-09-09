@@ -65,6 +65,14 @@ export const GEN_AI_USAGE_CACHE_WRITE_INPUT_TOKENS =
 export const GEN_AI_AGENT_NAME = "gen_ai.agent.name";
 /** Whether only part of the paper was sent. */
 export const PAPERCAST_RETRIEVED = "papercast.context.retrieved";
+/**
+ * Which rankers chose those sections: "lexical" or "hybrid".
+ *
+ * Reports what ran rather than what was configured, because dense scoring is
+ * allowed to be unavailable and a run that quietly fell back to lexical alone
+ * looks identical from the outside otherwise.
+ */
+export const PAPERCAST_RETRIEVAL_METHOD = "papercast.context.retrieval_method";
 /** Synthesis calls made, which is what a hosted voice bills for. */
 export const PAPERCAST_TTS_CALLS = "papercast.tts.calls";
 /** Seconds of audio a speech operation handled. */
