@@ -1089,7 +1089,7 @@ audio {
   stroke: var(--accent);
 }
 .label {
-  font-size: 12px;
+  font-size: 11px;
   fill: var(--muted);
 }
 .label.shared {
@@ -1237,4 +1237,39 @@ audio {
   color: var(--faint);
   font-size: 0.76rem;
   white-space: nowrap;
+}
+
+.graph-controls {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 0.75rem;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.graph-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+}
+.graph-clear {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 0.78rem;
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+/* A pinned node keeps its ring, so it is obvious which one the panel describes. */
+.node .dot {
+  transition: stroke-width 0.15s;
+}
+.node:hover .dot {
+  stroke-width: 3;
 }
