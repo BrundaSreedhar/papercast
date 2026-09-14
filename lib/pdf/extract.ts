@@ -9,6 +9,9 @@
  */
 
 import { parseReferences, type Reference } from "./references";
+import { withSpanFor } from "../trace/tracer";
+import * as TA from "../trace/attributes";
+import { tags } from "../trace/langsmith";
 import { figuresToText } from "../vision/describe";
 import type { FigureDescription } from "../vision/types";
 
@@ -635,9 +638,28 @@ export async function extractTextFromPdf(data: Buffer): Promise<string> {
 }
 
 /** Full pipeline: PDF bytes -> clean, structured paper, with its pages kept. */
-export async function extractPaper(data: Buffer): Promise<PaperStructure> {
-  const source = await extractSourceFromPdf(data);
-  return { ...parsePaperStructure(source.text), source };
+export function extractPaper(data: Buffer): Promise<PaperStructure> {
+  // Extraction decides what every later stage can possibly say, so what it
+  // produced — how many sections, how many pages, which title it settled on —
+  // is the first thing worth knowing when an episode comes out wrong.
+  return withSpanFor(
+    "extract paper",
+    { [TA.PAPERCAST_IMAGE_BYTES]: data.length, ...tags("extract") },
+    async (span) => {
+      const source = await extractSourceFromPdf(data);
+      const paper = { ...parsePaperStructure(source.text), source };
+      span.setAttributes({
+        [TA.PAPERCAST_PAPER_TITLE]: paper.title ?? "",
+        [TA.PAPERCAST_SECTION_COUNT]: paper.sections.length,
+        [TA.PAPERCAST_PAPER_WORDS]: paper.wordCount,
+        [TA.PAPERCAST_PAGE_COUNT]: source.pages?.length ?? 0,
+        // Headings are structure rather than content, so they travel without
+        // payload capture: they are what makes a bad extraction obvious.
+        [TA.PAPERCAST_SECTIONS]: paper.sections.map((x) => x.heading).join(" · "),
+      });
+      return paper;
+    },
+  );
 }
 
 /** The page a character offset in `source.text` falls on, if any. */

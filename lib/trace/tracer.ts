@@ -120,6 +120,19 @@ export function withSpanFor<T>(
 }
 
 /** Mark a span failed. Never swallows — the caller still rethrows. */
+/**
+ * Add attributes to whatever span is currently open.
+ *
+ * For facts that are learned in the middle of a stage rather than at its edges
+ * — how many turns got a citation, how long the finished script came out — and
+ * for synchronous work that would otherwise have to become async purely to be
+ * traceable. A no-op when tracing is off, and when nothing is open.
+ */
+export function annotate(attributes: Attributes): void {
+  if (!enabled) return;
+  trace.getActiveSpan()?.setAttributes(attributes);
+}
+
 export function recordError(span: Span, err: unknown): void {
   const error = err instanceof Error ? err : new Error(String(err));
   span.setAttribute(ATTR_ERROR_TYPE, error.name);

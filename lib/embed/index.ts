@@ -16,6 +16,9 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
+import { withSpanFor } from "../trace/tracer";
+import * as TA from "../trace/attributes";
+import { tags } from "../trace/langsmith";
 
 export const EMBED_MODEL = () =>
   process.env.EMBED_MODEL ?? "hf.co/CompendiumLabs/bge-base-en-v1.5-gguf:latest";
@@ -84,43 +87,58 @@ const keyFor = (model: string, text: string) =>
  * what makes a second question about the same paper free: its sections were
  * embedded when the first question was asked.
  */
-export async function embedTexts(
+export function embedTexts(
   texts: string[],
   timeoutMs = 20_000,
 ): Promise<number[][] | undefined> {
-  if (texts.length === 0) return [];
-  const model = EMBED_MODEL();
-  const clipped = texts.map((t) => t.slice(0, MAX_CHARS));
-  const keys = clipped.map((t) => keyFor(model, t));
-  const found = await Promise.all(keys.map(cached));
-  const missing = clipped.filter((_, i) => !found[i]);
-  if (missing.length === 0) return found as number[][];
+  if (texts.length === 0) return Promise.resolve([]);
+  // The cached count is the number worth seeing: it is the difference between
+  // a question that waits on a model and one answered from disk.
+  return withSpanFor(
+    "embed",
+    {
+      [TA.PAPERCAST_EMBED_COUNT]: texts.length,
+      [TA.PAPERCAST_EMBED_MODEL]: EMBED_MODEL(),
+      ...tags("embed"),
+    },
+    (span) => run(span),
+  );
 
-  let fresh: number[][];
-  try {
-    const res = await fetch(`${BASE_URL().replace(/\/$/, "")}/embeddings`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model, input: missing }),
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-    if (!res.ok) return undefined;
-    const body = (await res.json()) as { data?: { embedding: number[] }[] };
-    if (!body.data || body.data.length !== missing.length) return undefined;
-    fresh = body.data.map((d) => d.embedding);
-  } catch {
-    // No endpoint, no model, or too slow. Every caller works without this.
-    return undefined;
-  }
+  async function run(span: import("@opentelemetry/api").Span) {
+    const model = EMBED_MODEL();
+    const clipped = texts.map((t) => t.slice(0, MAX_CHARS));
+    const keys = clipped.map((t) => keyFor(model, t));
+    const found = await Promise.all(keys.map(cached));
+    const missing = clipped.filter((_, i) => !found[i]);
+    span.setAttribute(TA.PAPERCAST_EMBED_CACHED, texts.length - missing.length);
+    if (missing.length === 0) return found as number[][];
 
-  let next = 0;
-  const out: number[][] = [];
-  for (let i = 0; i < clipped.length; i++) {
-    const vector = found[i] ?? fresh[next++]!;
-    if (!found[i]) void store(keys[i]!, vector);
-    out.push(vector);
+    let fresh: number[][];
+    try {
+      const res = await fetch(`${BASE_URL().replace(/\/$/, "")}/embeddings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model, input: missing }),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      if (!res.ok) return undefined;
+      const body = (await res.json()) as { data?: { embedding: number[] }[] };
+      if (!body.data || body.data.length !== missing.length) return undefined;
+      fresh = body.data.map((d) => d.embedding);
+    } catch {
+      // No endpoint, no model, or too slow. Every caller works without this.
+      return undefined;
+    }
+
+    let next = 0;
+    const out: number[][] = [];
+    for (let i = 0; i < clipped.length; i++) {
+      const vector = found[i] ?? fresh[next++]!;
+      if (!found[i]) void store(keys[i]!, vector);
+      out.push(vector);
+    }
+    return out;
   }
-  return out;
 }
 
 /** Embed a question, with whatever the model wants in front of a query. */

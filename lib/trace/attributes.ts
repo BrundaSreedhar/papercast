@@ -141,3 +141,43 @@ export const PAPERCAST_CAPTION_COUNT = "papercast.caption_count";
 export function providerName(name: string): string {
   return name === "open" ? "openai" : name;
 }
+
+/* ── PaperCast: the detail a run is judged on ──────────────────────────── */
+
+/** Headings actually sent to the model, comma-separated. */
+export const PAPERCAST_SECTIONS = "papercast.retrieval.sections";
+/** How many sections the paper has, against how many were sent. */
+export const PAPERCAST_SECTION_COUNT = "papercast.paper.sections";
+export const PAPERCAST_PAGE_COUNT = "papercast.paper.pages";
+export const PAPERCAST_PAPER_TITLE = "papercast.paper.title";
+export const PAPERCAST_PAPER_WORDS = "papercast.paper.words";
+export const PAPERCAST_PAPER_TRUNCATED = "papercast.paper.truncated";
+
+/** The finished script. Payload-gated: it is the whole point of the run. */
+export const PAPERCAST_TRANSCRIPT = "papercast.transcript";
+export const PAPERCAST_SUMMARY = "papercast.summary";
+export const PAPERCAST_KEY_POINTS = "papercast.key_points";
+export const PAPERCAST_WORDS = "papercast.length.words";
+export const PAPERCAST_CHARS = "papercast.length.chars";
+export const PAPERCAST_ESTIMATED_MINUTES = "papercast.length.estimated_minutes";
+export const PAPERCAST_LENGTH_RATIO = "papercast.length.ratio";
+export const PAPERCAST_CONTINUATIONS = "papercast.length.continuations";
+
+/** One synthesis call: which turn, which voice, and what it said. */
+export const PAPERCAST_CHUNK_INDEX = "papercast.tts.chunk";
+export const PAPERCAST_CHUNK_CHARS = "papercast.tts.chunk_chars";
+export const PAPERCAST_CHUNK_TEXT = "papercast.tts.text";
+export const PAPERCAST_TURN_INDEX = "papercast.tts.turn";
+export const PAPERCAST_SPEAKER = "papercast.tts.speaker";
+export const PAPERCAST_VOICES = "papercast.tts.voices";
+export const PAPERCAST_TTS_PROVIDER = "papercast.tts.provider";
+export const PAPERCAST_TTS_FELL_BACK_FROM = "papercast.tts.fell_back_from";
+
+/** Citations: how many turns were anchored, and how many could not be. */
+export const PAPERCAST_CITED_TURNS = "papercast.citations.anchored";
+export const PAPERCAST_UNCITED_TURNS = "papercast.citations.unanchored";
+
+/** Embedding: how much was asked for, and how much was already on disk. */
+export const PAPERCAST_EMBED_COUNT = "papercast.embed.count";
+export const PAPERCAST_EMBED_CACHED = "papercast.embed.cached";
+export const PAPERCAST_EMBED_MODEL = "papercast.embed.model";

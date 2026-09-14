@@ -190,6 +190,38 @@ out to `lib/asr/` — it gained a second production caller when a listener could
 ask a question out loud, and a third import in that direction was the wrong way
 to answer it. Move the remaining three the same way rather than adding more.
 
+## Tracing and the detailed log
+
+Spans follow the OpenTelemetry GenAI conventions and every model call is
+instrumented by `traced()` wrapping the one factory, so nothing has a call site
+to change. Three destinations, and they answer different questions:
+`TRACE_LOG=1` prints a line per span beside a dev server, `--trace` renders a
+waterfall when a command ends, and an OTLP endpoint takes the whole tree.
+
+**LangSmith is an exporter, not an integration.** It accepts OTLP and reads the
+GenAI conventions, so `LANGSMITH_API_KEY` is all it takes — no SDK, no second
+instrumentation path, no wrapper at any call site. `lib/trace/langsmith.ts`
+holds the endpoint, the headers and its tag vocabulary, and is the **only** file
+allowed to know those names; everything else emits spec attributes and stays
+free of any one vendor. It runs alongside a local endpoint rather than instead
+of one.
+
+Setting any destination is now enough to start tracing —
+`tracingDestinationConfigured()`. Both entrypoints used to test for an OTLP
+endpoint by hand, so a LangSmith key did nothing without also passing `--trace`.
+
+**`TRACE_DETAIL_FILE` writes every span in full**, one JSON object per line
+(`lib/trace/detail.ts`), which is the thing to read when the question is "what
+exactly did we send it". JSONL because the useful thing to do with it is `jq`.
+
+**Content is opt-in, everywhere.** Prompts, responses, the transcript, the
+retrieved section text and each chunk handed to the voice appear only under
+`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` (or `--trace-payloads`).
+Shape always travels — counts, sizes, durations, section _headings_, which
+model, which voice — because none of that is anybody's document. Keep new
+attributes on that side of the line: a trace must not quietly become a copy of
+a paper somebody gave you in confidence.
+
 ## Do not run evals on every change
 
 `npm run eval` and `npm run eval:validate` cost real money and minutes, and they

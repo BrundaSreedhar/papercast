@@ -11,14 +11,17 @@
  * span as it finishes in the terminal beside the server, which is what you want
  * when you only need to know which model was just called and what it cost.
  */
-import { initTracing, shutdownTracing } from "./lib/trace/index";
+import {
+  initTracing,
+  shutdownTracing,
+  tracingDestinationConfigured,
+} from "./lib/trace/index";
 
-const otlp =
-  process.env.OTEL_EXPORTER_OTLP_ENDPOINT?.trim() ||
-  process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT?.trim();
 const toConsole = process.env.TRACE_LOG?.trim() === "1";
 
-if (otlp || toConsole) {
+// An OTLP endpoint, a LangSmith key or a detail-log path all count: each is
+// somewhere for spans to go, and none of them should need a second switch.
+if (tracingDestinationConfigured()) {
   initTracing({
     serviceName: "paper-to-podcast-web",
     waterfall: false,

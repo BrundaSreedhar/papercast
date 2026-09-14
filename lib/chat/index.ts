@@ -21,7 +21,8 @@ import type { LLMProvider, Usage } from "../llm/types";
 import { paperToText, type PaperStructure } from "../pdf/extract";
 import { PaperLocator, type Citation } from "../pdf/locate";
 import { retrieveForQuestion } from "./retrieve";
-import { withSpan } from "../trace/index";
+import { withSpan, withSpanFor } from "../trace/index";
+import { tags } from "../trace/langsmith";
 import * as TA from "../trace/attributes";
 
 /**
@@ -144,8 +145,24 @@ export async function askPaper(
 ): Promise<PaperReply> {
   const history = (opts.history ?? []).slice(-HISTORY_TURNS);
   const selected = opts.retrieve
-    ? await withSpan("retrieve sections", { [TA.PAPERCAST_RETRIEVED]: true }, () =>
-        retrieveForQuestion(paper, question),
+    ? await withSpanFor(
+        "retrieve sections",
+        { [TA.PAPERCAST_RETRIEVED]: true, ...tags("retrieval") },
+        async (span) => {
+          const got = await retrieveForQuestion(paper, question);
+          // Which sections the answer was allowed to see. Headings, not text:
+          // this is the first thing to check when an answer says the paper does
+          // not address something it does.
+          span.setAttributes({
+            [TA.PAPERCAST_RETRIEVAL_METHOD]: got.method,
+            [TA.PAPERCAST_SECTION_COUNT]: paper.sections.length,
+            [TA.PAPERCAST_SECTIONS]: got.whole
+              ? "(whole paper)"
+              : got.sections.join(" · "),
+            [TA.PAPERCAST_CONTEXT_CHARS]: got.text.length,
+          });
+          return got;
+        },
       )
     : undefined;
   const context = selected ? selected.text : paperToText(paper);

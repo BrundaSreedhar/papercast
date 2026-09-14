@@ -14,6 +14,8 @@ import { writeFile } from "node:fs/promises";
 import { extractPaper } from "../pdf/extract";
 import { generateEpisode } from "../llm/generateEpisode";
 import { describeShortfall } from "../llm/length";
+import { annotate, capturePayloads, truncate } from "../trace/tracer";
+import { metadata, tags } from "../trace/langsmith";
 import { getProvider } from "../llm/index";
 import type { ProviderName } from "../config/env";
 import {
@@ -85,6 +87,20 @@ export async function runJob(
     {
       [TA.GEN_AI_OPERATION_NAME]: "invoke_workflow",
       [TA.GEN_AI_WORKFLOW_NAME]: "paper-to-podcast",
+      ...tags(
+        "episode",
+        input.format ?? "dialogue",
+        input.provider,
+        input.revise && "revise",
+        input.verify && "verify",
+        input.audioPath ? "audio" : "transcript-only",
+      ),
+      ...metadata({
+        job_id: jobId,
+        paper_id: input.paperId,
+        minutes: input.minutes,
+        format: input.format ?? "dialogue",
+      }),
       [TA.PAPERCAST_JOB_ID]: jobId,
       [TA.PAPERCAST_MINUTES]: input.minutes,
       [TA.PAPERCAST_REVISE]: input.revise === true,
@@ -223,6 +239,25 @@ async function runJobStages(
     // number a person can compare to what they asked for is the whole fix.
     const { length } = generated;
     const shortfall = describeShortfall(length);
+    // The script and its measurements go on the run itself. The transcript is
+    // the thing the whole pipeline exists to produce, so it rides only with
+    // payload capture on — the same rule the prompts follow.
+    annotate({
+      [TA.PAPERCAST_WORDS]: length.words,
+      [TA.PAPERCAST_CHARS]: length.chars,
+      [TA.PAPERCAST_ESTIMATED_MINUTES]: Number(length.estimatedMinutes.toFixed(2)),
+      [TA.PAPERCAST_LENGTH_RATIO]: Number(length.ratio.toFixed(3)),
+      [TA.PAPERCAST_CONTINUATIONS]: generated.continuations,
+      ...(capturePayloads()
+        ? {
+            [TA.PAPERCAST_TRANSCRIPT]: truncate(
+              generated.episode.turns.map((t) => `${t.speaker}: ${t.text}`).join("\n\n"),
+            ),
+            [TA.PAPERCAST_SUMMARY]: truncate(generated.episode.summary, 1_000),
+            [TA.PAPERCAST_KEY_POINTS]: generated.episode.keyPoints.join(" · "),
+          }
+        : {}),
+    });
     await update({
       percent: overallPercent("scripting", 1, stages),
       message:
@@ -299,6 +334,10 @@ async function runJobStages(
     // describe the script that was actually kept. Best-effort like the ledger —
     // a failure to place turns must never cost an episode that was produced.
     const citations = ground(episode, paper);
+    annotate({
+      [TA.PAPERCAST_CITED_TURNS]: citations?.length ?? 0,
+      [TA.PAPERCAST_UNCITED_TURNS]: episode.turns.length - (citations?.length ?? 0),
+    });
 
     if (!input.audioPath) {
       await shelve({
@@ -353,6 +392,14 @@ async function runJobStages(
         }),
     });
     await writeFile(input.audioPath, audio.audio);
+    annotate({
+      [TA.PAPERCAST_TTS_PROVIDER]: audio.provider,
+      [TA.PAPERCAST_VOICES]: audio.voices,
+      [TA.PAPERCAST_TTS_CALLS]: audio.calls,
+      ...(audio.fellBackFrom
+        ? { [TA.PAPERCAST_TTS_FELL_BACK_FROM]: audio.fellBackFrom }
+        : {}),
+    });
 
     const checks = runAudioChecks({
       episode,

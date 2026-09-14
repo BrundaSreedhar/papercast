@@ -23,6 +23,9 @@ import type { Episode } from "../llm/schema";
 import { chunkForSynthesis } from "./chunk";
 import { joinWavs } from "./wav";
 import type { EpisodeAudio, TTSProvider, TurnTiming } from "./types";
+import { capturePayloads, truncate, withSpan, withSpanFor } from "../trace/tracer";
+import * as TA from "../trace/attributes";
+import { metadata, tags } from "../trace/langsmith";
 
 export interface SynthesizeOptions {
   provider: TTSProvider;
@@ -62,88 +65,127 @@ export async function synthesizeEpisode(
   }
 }
 
-async function synthesizeWith(
+function synthesizeWith(
   episode: Episode,
   provider: TTSProvider,
   gapMs: number,
   onProgress: SynthesizeOptions["onProgress"],
 ): Promise<EpisodeAudio> {
-  if (episode.turns.length === 0) throw new Error("Episode has no dialogue turns.");
+  return withSpanFor(
+    `synthesize ${provider.name}`,
+    {
+      [TA.PAPERCAST_TTS_PROVIDER]: provider.name,
+      [TA.PAPERCAST_VOICES]: provider.description,
+      ...tags("tts", provider.name),
+      ...metadata({ voices: provider.description }),
+    },
+    async (span) => {
+      const out = await run();
+      span.setAttribute(TA.PAPERCAST_TTS_CALLS, out.calls);
+      span.setAttribute(TA.PAPERCAST_AUDIO_SECONDS, out.totalMs / 1000);
+      return out;
+    },
+  );
 
-  // One entry per synthesis call, plus a record of which turn produced it.
-  const buffers: Buffer[] = [];
-  const owners: { turnIndex: number; speaker: TurnTiming["speaker"] }[] = [];
+  async function run(): Promise<EpisodeAudio> {
+    if (episode.turns.length === 0) throw new Error("Episode has no dialogue turns.");
 
-  for (const [turnIndex, turn] of episode.turns.entries()) {
-    const chunks = chunkForSynthesis(turn.text, provider.maxChars);
-    for (const chunk of chunks) {
-      buffers.push(await provider.synthesizeChunk(chunk, turn.speaker));
-      owners.push({ turnIndex, speaker: turn.speaker });
+    // One entry per synthesis call, plus a record of which turn produced it.
+    const buffers: Buffer[] = [];
+    const owners: { turnIndex: number; speaker: TurnTiming["speaker"] }[] = [];
+
+    for (const [turnIndex, turn] of episode.turns.entries()) {
+      const chunks = chunkForSynthesis(turn.text, provider.maxChars);
+      for (const [chunkIndex, chunk] of chunks.entries()) {
+        // A span per synthesis call, because a chunk is the unit that fails: a
+        // backend rejects, times out or mangles one chunk, and knowing which turn
+        // and which words is the whole of the diagnosis. The text itself rides
+        // along only with payload capture on — it is the episode's content, and a
+        // trace should not quietly become a copy of it.
+        buffers.push(
+          await withSpan(
+            `speak turn ${turnIndex}`,
+            {
+              [TA.PAPERCAST_TURN_INDEX]: turnIndex,
+              [TA.PAPERCAST_CHUNK_INDEX]: chunkIndex,
+              [TA.PAPERCAST_CHUNK_CHARS]: chunk.length,
+              [TA.PAPERCAST_SPEAKER]: turn.speaker,
+              [TA.PAPERCAST_TTS_PROVIDER]: provider.name,
+              ...(capturePayloads()
+                ? { [TA.PAPERCAST_CHUNK_TEXT]: truncate(chunk) }
+                : {}),
+              ...tags("tts", provider.name, turn.speaker),
+            },
+            () => provider.synthesizeChunk(chunk, turn.speaker),
+          ),
+        );
+        owners.push({ turnIndex, speaker: turn.speaker });
+      }
+      onProgress?.(turnIndex + 1, episode.turns.length);
     }
-    onProgress?.(turnIndex + 1, episode.turns.length);
-  }
 
-  // Gaps separate turns, not the chunks within one turn, so the join is done
-  // without gaps and the spacing is applied per turn boundary below.
-  const joined = joinWavs(buffers, 0);
+    // Gaps separate turns, not the chunks within one turn, so the join is done
+    // without gaps and the spacing is applied per turn boundary below.
+    const joined = joinWavs(buffers, 0);
 
-  // Collapse chunk-level segments back up to turn-level timings.
-  const timings: TurnTiming[] = [];
-  joined.segments.forEach((seg, i) => {
-    const owner = owners[i]!;
-    const last = timings[timings.length - 1];
-    if (last && last.turnIndex === owner.turnIndex) {
-      last.endMs = seg.endMs;
-      last.chunks += 1;
-    } else {
-      timings.push({
-        turnIndex: owner.turnIndex,
-        speaker: owner.speaker,
-        startMs: seg.startMs,
-        endMs: seg.endMs,
-        chunks: 1,
-      });
+    // Collapse chunk-level segments back up to turn-level timings.
+    const timings: TurnTiming[] = [];
+    joined.segments.forEach((seg, i) => {
+      const owner = owners[i]!;
+      const last = timings[timings.length - 1];
+      if (last && last.turnIndex === owner.turnIndex) {
+        last.endMs = seg.endMs;
+        last.chunks += 1;
+      } else {
+        timings.push({
+          turnIndex: owner.turnIndex,
+          speaker: owner.speaker,
+          startMs: seg.startMs,
+          endMs: seg.endMs,
+          chunks: 1,
+        });
+      }
+    });
+
+    if (gapMs <= 0) {
+      return {
+        audio: joined.wav,
+        format: "wav",
+        timings,
+        totalMs: joined.totalMs,
+        provider: provider.name,
+        voices: provider.description,
+        calls: buffers.length,
+      };
     }
-  });
 
-  if (gapMs <= 0) {
+    // Re-join with silence at turn boundaries. Chunks belonging to one turn are
+    // merged first so a gap never lands inside a sentence.
+    const perTurn: Buffer[][] = [];
+    owners.forEach((owner, i) => {
+      const bucket = perTurn[owner.turnIndex] ?? (perTurn[owner.turnIndex] = []);
+      bucket.push(buffers[i]!);
+    });
+
+    const turnBuffers = perTurn.map((bufs) => joinWavs(bufs, 0).wav);
+    const spaced = joinWavs(turnBuffers, gapMs);
+
+    const spacedTimings: TurnTiming[] = spaced.segments.map((seg, i) => ({
+      turnIndex: i,
+      speaker: episode.turns[i]!.speaker,
+      startMs: seg.startMs,
+      endMs: seg.endMs,
+      chunks: perTurn[i]?.length ?? 1,
+    }));
+
     return {
-      audio: joined.wav,
+      audio: spaced.wav,
       format: "wav",
-      timings,
-      totalMs: joined.totalMs,
+      timings: spacedTimings,
+      totalMs: spaced.totalMs,
       provider: provider.name,
       voices: provider.description,
       calls: buffers.length,
     };
   }
-
-  // Re-join with silence at turn boundaries. Chunks belonging to one turn are
-  // merged first so a gap never lands inside a sentence.
-  const perTurn: Buffer[][] = [];
-  owners.forEach((owner, i) => {
-    const bucket = perTurn[owner.turnIndex] ?? (perTurn[owner.turnIndex] = []);
-    bucket.push(buffers[i]!);
-  });
-
-  const turnBuffers = perTurn.map((bufs) => joinWavs(bufs, 0).wav);
-  const spaced = joinWavs(turnBuffers, gapMs);
-
-  const spacedTimings: TurnTiming[] = spaced.segments.map((seg, i) => ({
-    turnIndex: i,
-    speaker: episode.turns[i]!.speaker,
-    startMs: seg.startMs,
-    endMs: seg.endMs,
-    chunks: perTurn[i]?.length ?? 1,
-  }));
-
-  return {
-    audio: spaced.wav,
-    format: "wav",
-    timings: spacedTimings,
-    totalMs: spaced.totalMs,
-    provider: provider.name,
-    voices: provider.description,
-    calls: buffers.length,
-  };
 }

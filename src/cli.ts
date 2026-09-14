@@ -41,7 +41,7 @@ function parseArgs(argv: string[]): Args {
     console.error(
       "Usage: npm run generate -- <paper.pdf> [--minutes N] [--provider anthropic|openai|gemini|open]\n" +
         "                          [--out file.json] [--figures] [--solo] [--eli5] [--revise] [--revise-rounds N]\n" +
-        "                          [--trace] [--trace-payloads]",
+        "                          [--trace] [--trace-payloads] [--trace-detail <file>]",
     );
     process.exit(1);
   }
