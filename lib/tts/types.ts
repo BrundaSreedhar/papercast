@@ -38,4 +38,14 @@ export interface EpisodeAudio {
   voices: string;
   /** Total synthesis calls made — the count the original code got wrong. */
   calls: number;
+  /**
+   * The backend that was asked for, when a different one produced this audio.
+   *
+   * Absent on an ordinary run. Present when the primary failed and the fallback
+   * remade the episode, because audio in a voice nobody chose should say so
+   * rather than quietly differ from the one before it.
+   */
+  fellBackFrom?: string;
+  /** Why the primary was abandoned, kept for the report. */
+  fallbackReason?: string;
 }

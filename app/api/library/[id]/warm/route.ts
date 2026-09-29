@@ -37,6 +37,9 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
     // read the paper, and the answer is thrown away.
     await askPaper(record.paper, "What is this paper about?", {
       provider: getProvider(provider),
+      // Warming exists to push the whole paper through the model once; an
+      // agent reading two sections would warm nothing.
+      mode: "single-pass",
     });
     return NextResponse.json({ warmed: true });
   } catch (err) {

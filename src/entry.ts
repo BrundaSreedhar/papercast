@@ -12,15 +12,28 @@
  * Nothing under `lib/` prints; `shutdownTracing` hands back a string and this
  * decides what to do with it.
  */
-import { initTracing, shutdownTracing } from "../lib/trace/index";
+import {
+  initTracing,
+  shutdownTracing,
+  tracingDestinationConfigured,
+} from "../lib/trace/index";
 
 /** Run a command's main, then flush tracing and exit with the right code. */
 export function runEntry(main: () => Promise<void>): void {
   const argv = process.argv.slice(2);
 
-  if (argv.includes("--trace")) {
+  // `--trace` asks for the end-of-run waterfall. Everything else — an OTLP
+  // endpoint, a LangSmith key, a detail-log path — is already a statement that
+  // spans should go somewhere, and used to be ignored without the flag.
+  const wantsWaterfall = argv.includes("--trace");
+  const detailFlag = argv.indexOf("--trace-detail");
+  if (detailFlag !== -1 && argv[detailFlag + 1]) {
+    process.env.TRACE_DETAIL_FILE = argv[detailFlag + 1];
+  }
+
+  if (wantsWaterfall || tracingDestinationConfigured()) {
     initTracing({
-      waterfall: true,
+      waterfall: wantsWaterfall,
       capturePayloads: argv.includes("--trace-payloads"),
     });
   }

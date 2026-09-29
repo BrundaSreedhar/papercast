@@ -45,14 +45,17 @@ class StubProvider implements LLMProvider {
   }
 }
 
-describe("askPaper", () => {
+describe("askPaper, answering in one pass", () => {
   it("turns a real quote into a section and page", async () => {
     const provider = new StubProvider({
       answer: "Six ways, across three zones.",
       quotes: ["Each segment is replicated six ways across three availability zones"],
       kind: "from-paper" as const,
     });
-    const reply = await askPaper(paper, "How many copies?", { provider });
+    const reply = await askPaper(paper, "How many copies?", {
+      provider,
+      mode: "single-pass",
+    });
     expect(reply.citations).toHaveLength(1);
     expect(reply.citations[0]!.page).toBe(1);
     expect(reply.citations[0]!.heading).toMatch(/replication/i);
@@ -68,7 +71,10 @@ describe("askPaper", () => {
       ],
       kind: "from-paper" as const,
     });
-    const reply = await askPaper(paper, "How was it trained?", { provider });
+    const reply = await askPaper(paper, "How was it trained?", {
+      provider,
+      mode: "single-pass",
+    });
     expect(reply.citations).toEqual([]);
     // The answer is still returned; it is the *evidence* that is withheld.
     expect(reply.answer).toContain("ImageNet");
@@ -86,7 +92,10 @@ describe("askPaper", () => {
       quotes: ["We trained the model with a neural network architecture"],
       kind: "from-paper" as const,
     });
-    const reply = await askPaper(paper, "What learning rate?", { provider });
+    const reply = await askPaper(paper, "What learning rate?", {
+      provider,
+      mode: "single-pass",
+    });
     expect(reply.kind).toBe("from-paper");
     expect(reply.citations).toEqual([]);
     expect(reply.grounded).toBe(false);
@@ -98,7 +107,9 @@ describe("askPaper", () => {
       quotes: ["Each segment is replicated six ways across three availability zones"],
       kind: "from-paper" as const,
     });
-    expect((await askPaper(paper, "How many?", { provider })).grounded).toBe(true);
+    expect(
+      (await askPaper(paper, "How many?", { provider, mode: "single-pass" })).grounded,
+    ).toBe(true);
   });
 
   it("carries a refusal through untouched", async () => {
@@ -107,7 +118,10 @@ describe("askPaper", () => {
       quotes: [],
       kind: "not-addressed" as const,
     });
-    const reply = await askPaper(paper, "What about neural networks?", { provider });
+    const reply = await askPaper(paper, "What about neural networks?", {
+      provider,
+      mode: "single-pass",
+    });
     expect(reply.kind).toBe("not-addressed");
     expect(reply.citations).toEqual([]);
     // A refusal is not an ungrounded claim; it is the paper saying nothing.
@@ -125,7 +139,10 @@ describe("askPaper", () => {
         "A recurrent network processes a sequence one step at a time, carrying state forward.",
       quotes: ["Each segment is replicated six ways across three availability zones"],
     });
-    const reply = await askPaper(paper, "What is an RNN?", { provider });
+    const reply = await askPaper(paper, "What is an RNN?", {
+      provider,
+      mode: "single-pass",
+    });
     expect(reply.kind).toBe("background");
     // A real quote, deliberately discarded: it supports nothing that was said.
     expect(reply.citations).toEqual([]);
@@ -142,7 +159,10 @@ describe("askPaper", () => {
       ],
       kind: "from-paper" as const,
     });
-    const reply = await askPaper(paper, "How many copies?", { provider });
+    const reply = await askPaper(paper, "How many copies?", {
+      provider,
+      mode: "single-pass",
+    });
     // Two overlapping quotes resolve to one passage, and showing it twice would
     // read as two independent pieces of evidence.
     expect(reply.citations).toHaveLength(1);
@@ -150,7 +170,7 @@ describe("askPaper", () => {
 
   it("sends the paper as cacheable context, so a conversation pays for it once", async () => {
     const provider = new StubProvider({ answer: "x", quotes: [], answered: true });
-    await askPaper(paper, "anything?", { provider });
+    await askPaper(paper, "anything?", { provider, mode: "single-pass" });
     expect(provider.last?.cacheableContext).toContain("Aurora pushes redo processing");
     expect(provider.last?.user).not.toContain("Aurora pushes redo processing");
   });
@@ -159,6 +179,7 @@ describe("askPaper", () => {
     const provider = new StubProvider({ answer: "x", quotes: [], answered: true });
     await askPaper(paper, "And that one?", {
       provider,
+      mode: "single-pass",
       history: [
         { role: "user", content: "How many copies?" },
         { role: "assistant", content: "Six." },
@@ -176,6 +197,7 @@ describe("askPaper", () => {
     });
     const reply = await askPaper(parsePaperStructure(RAW), "How many copies?", {
       provider,
+      mode: "single-pass",
     });
     expect(reply.citations).toEqual([]);
   });

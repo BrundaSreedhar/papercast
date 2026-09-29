@@ -290,6 +290,31 @@ Forcing `tool_choice` guarantees Claude _calls_ the tool, not that its input mat
 
 Modern context windows swallow most papers whole, so chunking a typical paper would be engineering theatre. The real quality win is _what_ you send, not how you split it. Dropping the reference list and appendix measurably reduces fabricated citations. Papers that genuinely exceed the budget are truncated and flagged rather than silently cut.
 
+### Retrieval is hybrid, and the lexical half has the veto
+
+Answering a question sends the sections the question needs rather than the whole
+paper, which is what makes a local 7B model usable on a 17k-token paper. Two
+rankers choose them, fused by reciprocal rank: BM25 over sections, and cosine
+against a local embedding model.
+
+They are not equal partners. BM25 alone decides _whether_ to retrieve at all,
+because it can return nothing and cosine cannot. Measured on two papers, an
+off-topic probe scored 0.456 against a genuine best of 0.541 on one and 0.497
+against 0.506 on the other — a threshold that separates relevance from noise on
+the first paper is worthless on the second, so a question with no lexical
+purchase still falls back to sending the whole text. Dense scoring reorders and
+supplements that ranking; it never starts one.
+
+What it buys, measured on _Attention Is All You Need_ across five questions whose
+answering section was known in advance: lexical scoring alone missed two of them
+— "why did they stop using recurrence?" never reached "Why Self-Attention", and
+"how well did it do at translating into German?" never reached "Machine
+Translation", since neither section uses the reader's word. Fusion recovered
+both and lost none of the three already found.
+
+Embedding is optional. With no endpoint reachable, retrieval is exactly the
+lexical ranking it was before, and the trace records which one ran.
+
 ### Fabrication is not only about facts
 
 Left unconstrained, models name the show, hand the speakers doctorates, and slip into "our approach" as though the presenters wrote the paper. All three are forbidden in the prompt and checked deterministically afterwards.

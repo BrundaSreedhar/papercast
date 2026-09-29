@@ -45,6 +45,7 @@ export function TranscriptPlayer({
   timings,
   citations = [],
   episodeId,
+  startTurn,
 }: {
   audioUrl: string;
   turns: Turn[];
@@ -52,6 +53,14 @@ export function TranscriptPlayer({
   citations?: Citation[];
   /** Enables asking a question out loud, which pauses and resumes playback. */
   episodeId?: string;
+  /**
+   * Open at this turn: cued up, scrolled to and marked, but not playing.
+   *
+   * Not playing because a browser refuses to start audio the listener did not
+   * ask for, and a link arriving from another page is not that request. The
+   * play button starts it exactly there.
+   */
+  startTurn?: number;
 }) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [currentMs, setCurrentMs] = useState(0);
@@ -98,9 +107,48 @@ export function TranscriptPlayer({
     setPlaying(!audio.paused);
   }, [audioUrl]);
 
+  /*
+   * Cue up the linked turn.
+   *
+   * Setting the position before the audio's metadata has loaded is not
+   * reliable in every browser, so it is set now and again once metadata
+   * arrives, whichever comes first doing the work.
+   */
+  const cued = useMemo(
+    () =>
+      startTurn === undefined
+        ? undefined
+        : ordered.find((t) => t.turnIndex === startTurn),
+    [ordered, startTurn],
+  );
+  const cue = () => {
+    const audio = audioRef.current;
+    if (!audio || !cued || audio.currentTime > 0) return;
+    // A hair past the boundary: a seek to exactly the turn's start can report
+    // back a fraction earlier, which highlights (and scrolls to) the turn
+    // before it. Fifty milliseconds is inaudible.
+    const ms = cued.startMs + 50;
+    audio.currentTime = ms / 1000;
+    setCurrentMs(ms);
+  };
+  useEffect(() => {
+    if (startTurn === undefined) return;
+    if (audioRef.current && audioRef.current.readyState >= 1) cue();
+    document.getElementById(`turn-${startTurn}`)?.scrollIntoView({ block: "center" });
+    // Once, on arrival: later changes to the query are new page loads anyway.
+  }, []);
+
+  /*
+   * Arrived by a link and not yet playing: the linked turn is where the reader
+   * was sent, and following along must not move them. It would, because the
+   * player starts at 0:00 before the cue lands, and a smooth scroll to the
+   * first turn outlasts the jump to the linked one.
+   */
+  const arrived = useRef(startTurn !== undefined);
+
   // Keep the active line in view, unless the reader has scrolled away.
   useEffect(() => {
-    if (!follow || activeIndex < 0) return;
+    if (!follow || activeIndex < 0 || arrived.current) return;
     document
       .getElementById(`turn-${activeIndex}`)
       ?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -167,9 +215,15 @@ export function TranscriptPlayer({
           preload="metadata"
           onTimeUpdate={(e) => setCurrentMs(e.currentTarget.currentTime * 1000)}
           onSeeked={(e) => setCurrentMs(e.currentTarget.currentTime * 1000)}
-          onLoadedMetadata={(e) => setDurationMs(e.currentTarget.duration * 1000)}
+          onLoadedMetadata={(e) => {
+            setDurationMs(e.currentTarget.duration * 1000);
+            cue();
+          }}
           onDurationChange={(e) => setDurationMs(e.currentTarget.duration * 1000)}
-          onPlay={() => setPlaying(true)}
+          onPlay={() => {
+            arrived.current = false;
+            setPlaying(true);
+          }}
           onPause={() => setPlaying(false)}
           onEnded={() => setPlaying(false)}
         />
@@ -290,7 +344,7 @@ export function TranscriptPlayer({
             <div
               key={i}
               id={`turn-${i}`}
-              className={`turn${isActive ? " active" : ""}${isPast && !isActive ? " past" : ""}`}
+              className={`turn${isActive ? " active" : ""}${isPast && !isActive ? " past" : ""}${i === startTurn ? " linked" : ""}`}
               data-speaker={turn.speaker}
               onClick={() => seekTo(i)}
               onKeyDown={(e) => {

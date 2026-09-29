@@ -9,6 +9,9 @@
  */
 
 import { parseReferences, type Reference } from "./references";
+import { withSpanFor } from "../trace/tracer";
+import * as TA from "../trace/attributes";
+import { tags } from "../trace/langsmith";
 import { figuresToText } from "../vision/describe";
 import type { FigureDescription } from "../vision/types";
 
@@ -197,6 +200,12 @@ function normalizeHeading(line: string): string {
     .trim();
 }
 
+/** Does this heading start the end matter, after which nothing is the paper? */
+function isEndMatter(line: string): boolean {
+  const n = normalizeHeading(line);
+  return /^(references|bibliography|appendix|appendices|supplementary)\b/.test(n);
+}
+
 /** Is a stripped section (references/appendix/etc.)? */
 function isStripHeading(line: string): boolean {
   const n = normalizeHeading(line);
@@ -204,28 +213,165 @@ function isStripHeading(line: string): boolean {
 }
 
 /**
- * Heuristic heading classifier. Academic PDFs vary wildly once flattened to
- * text, so we accept three signals: numbered headings, a known-title list, and
- * short ALL-CAPS lines.
+ * Section numbers are small. A larger leading number is a year ("2025. Accessed
+ * …"), a page range from a reference ("1754. New York, NY"), or a figure
+ * caption's continuation ("34. Right: a bottleneck block") — never a section.
  */
-function isHeading(rawLine: string): boolean {
+const MAX_SECTION_NUMBER = 20;
+
+/**
+ * Lowercase words that may sit after a colon in a real heading ("Solution
+ * sketch: Asynchronous Processing" is a heading; "Exercise Generation:
+ * Produces customized teaching" is a list item explaining itself).
+ */
+const TITLE_SMALL_WORDS = new Set(
+  "a an and as at by for from in into of on or the to via vs with".split(" "),
+);
+
+type HeadingShape = "numbered" | "known" | "caps";
+
+/** The top-level section number of a numbered heading, e.g. 3 for "3.2.1 …". */
+function topNumber(line: string): number {
+  return Number(/^\d+/.exec(line.trim())?.[0] ?? 0);
+}
+
+/**
+ * What a line looks like on its own, before any context is considered.
+ *
+ * Academic PDFs vary wildly once flattened to text, so three shapes count:
+ * numbered headings, known unnumbered titles, and short ALL-CAPS lines. Each
+ * is tighter than it looks, because each was letting a specific kind of junk
+ * through — see the comments inline.
+ */
+function headingShape(rawLine: string): HeadingShape | undefined {
   const line = rawLine.trim();
-  if (!line || line.length > 80) return false;
+  if (!line || line.length > 80) return undefined;
 
   const words = line.split(/\s+/);
-  if (words.length > 10) return false;
+  if (words.length > 10) return undefined;
 
-  // (a) Numbered: "1 Introduction", "3.2. Model Architecture"
-  if (/^\d+(\.\d+)*\.?\s+[A-Z]/.test(line)) return true;
+  // (a) Numbered: "1 Introduction", "3.2. Model Architecture".
+  const numbered = /^(\d+(?:\.\d+)*)\.?\s+(\S.*)$/.exec(line);
+  if (numbered) {
+    const parts = numbered[1]!.split(".").map(Number);
+    const rest = numbered[2]!;
+    if (parts[0]! < 1 || parts.some((n) => n > MAX_SECTION_NUMBER)) return undefined;
+    if (!/^[A-Z]/.test(rest)) return undefined;
+    // A heading names something. A table row that happens to start with a
+    // small number — "10 GB 107,000 2,400" — has no word in it at all.
+    if (!/[A-Za-z]{3,}/.test(rest)) return undefined;
+    // A colon followed by a lowercase sentence is a list item's label and its
+    // explanation, not a heading.
+    const after = /:\s*(.+)$/.exec(rest)?.[1];
+    if (
+      after &&
+      after
+        .split(/\s+/)
+        .some((w) => /^[a-z]/.test(w) && !TITLE_SMALL_WORDS.has(w.toLowerCase()))
+    ) {
+      return undefined;
+    }
+    return "numbered";
+  }
 
-  // (b) Known unnumbered heading (allow a trailing colon)
+  // (b) Known unnumbered heading, capitalized as a heading is. "model" alone on
+  // a line is the subscript of d_model, which pdf-parse puts on its own line,
+  // and it split one paper into sixteen fake sections called "model".
   const norm = normalizeHeading(line);
-  if (KNOWN_HEADINGS.includes(norm)) return true;
+  if (KNOWN_HEADINGS.includes(norm) && /^[A-Z]/.test(line)) return "known";
 
-  // (c) Short ALL-CAPS line, e.g. "RELATED WORK"
-  if (/^[A-Z][A-Z0-9 :-]{2,60}$/.test(line) && words.length <= 8) return true;
+  // (c) Short ALL-CAPS line, e.g. "RELATED WORK". A single word only when it
+  // is a known title: alone, an all-caps token is a diagram label ("ASYNC"),
+  // a table column ("LOC") or an argument label ("AV2") far more often.
+  if (/^[A-Z][A-Z0-9 :&,-]{2,60}$/.test(line) && words.length <= 8) {
+    const alphabetic = words.filter((w) => /^[A-Z&]+[,:]?$/.test(w));
+    if (words.length === 1) return KNOWN_HEADINGS.includes(norm) ? "caps" : undefined;
+    if (
+      alphabetic.length >= 2 &&
+      alphabetic.some((w) => w.replace(/\W/g, "").length >= 4)
+    ) {
+      return "caps";
+    }
+  }
 
+  return undefined;
+}
+
+/** Whether a line could be a heading, judged on its own. Used for the title. */
+function isHeading(rawLine: string): boolean {
+  return headingShape(rawLine) !== undefined;
+}
+
+/** Headings that mark a paper's structure rather than its content. */
+function isStructural(line: string): boolean {
+  const n = normalizeHeading(line);
+  return n === "abstract" || isStripHeading(line);
+}
+
+/** The next non-blank line after `i`, if any. */
+function nextContent(lines: string[], i: number, skip = 0): string | undefined {
+  let seen = 0;
+  for (let j = i + 1; j < lines.length; j++) {
+    const t = lines[j]!.trim();
+    if (!t) continue;
+    if (seen++ === skip) return t;
+  }
+  return undefined;
+}
+
+/**
+ * Whether the line after this one carries on the same sentence.
+ *
+ * A heading is followed by a sentence that starts with a capital; a list item
+ * or a wrapped line is followed by its own continuation in lowercase —
+ * "1. On this RoI-pooled" / "feature, all layers of conv5x…".
+ */
+function continuesSentence(lines: string[], i: number): boolean {
+  const next = nextContent(lines, i);
+  return next !== undefined && /^[a-z]/.test(next);
+}
+
+/**
+ * Whether prose follows, as it follows a heading. A table's column header is
+ * followed by more short cells ("Model" / "Accuracy" / "Clarity &"); a
+ * heading is followed by a paragraph, or by a numbered subheading.
+ */
+function proseFollows(lines: string[], i: number): boolean {
+  const first = nextContent(lines, i);
+  if (first !== undefined && headingShape(first) === "numbered") return true;
+  for (let k = 0; k < 3; k++) {
+    const t = nextContent(lines, i, k);
+    if (t === undefined) return false;
+    if (t.split(/\s+/).length >= 6) return true;
+  }
   return false;
+}
+
+/**
+ * Whether this paper numbers its sections.
+ *
+ * Papers are consistent about it, and knowing which kind this is removes most
+ * of what is left. In a numbered paper, an unnumbered line is a heading only if
+ * it is structural (Abstract, References, Appendix) — never "Model" or "PEER
+ * TO PEER GOSSIP", which are a table header and a diagram label. In an
+ * unnumbered paper, a numbered line is a list item.
+ */
+function numbersSections(lines: string[], from: number): boolean {
+  let numbered = 0;
+  let unnumbered = 0;
+  for (let i = from; i < lines.length; i++) {
+    const line = lines[i]!.trim();
+    const shape = headingShape(line);
+    if (!shape || isStructural(line)) continue;
+    if (shape === "numbered") {
+      if (!continuesSentence(lines, i)) numbered++;
+    } else if (proseFollows(lines, i) && !continuesSentence(lines, i)) {
+      unnumbered++;
+    }
+  }
+  // Ties go to unnumbered: a paper that titles its sections in words and also
+  // has a numbered list would otherwise flip on one list item.
+  return numbered > unnumbered || (numbered > 0 && unnumbered === 0);
 }
 
 /**
@@ -266,6 +412,25 @@ function looksLikeAuthorLine(line: string): boolean {
   const words = line.trim().split(/\s+/);
   if (words.length <= 3 && words.every((w) => /^[A-Z][a-zA-Z.'’-]*$/.test(w)))
     return true;
+
+  // Names laid out side by side, which extraction separates by two spaces
+  // where the gap between them is column-wide: "Kaiming He  Xiangyu Zhang  …".
+  // Each piece is a name's worth of capitalized words; a title wrapping onto a
+  // second line is one run of single-spaced words, never several.
+  const pieces = line.trim().split(/\s{2,}/);
+  if (
+    pieces.length >= 2 &&
+    pieces.every((p) => {
+      const ws = p.split(/\s+/);
+      return (
+        ws.length >= 2 &&
+        ws.length <= 3 &&
+        ws.every((w) => /^[A-Z][a-zA-Z.'’-]*$/.test(w))
+      );
+    })
+  ) {
+    return true;
+  }
 
   // Names run together with no space between them, which is what a two-column
   // author block collapses to: "Kaiming HeXiangyu ZhangShaoqing RenJian Sun".
@@ -414,9 +579,37 @@ export function parsePaperStructure(raw: string): PaperStructure {
     buffer = [];
   };
 
+  // A heading has to look like one and sit where one would: see
+  // `numbersSections`, `continuesSentence` and `proseFollows` for why each
+  // test exists. A line that fails stays in the section it interrupted.
+  const numberedPaper = numbersSections(lines, firstContentIdx);
+  let lastTop = 0;
+  const startsSection = (i: number): boolean => {
+    const line = lines[i]!.trim();
+    const shape = headingShape(line);
+    if (!shape) return false;
+    if (isStructural(line)) return true;
+    if (continuesSentence(lines, i)) return false;
+    if (shape === "numbered") {
+      // Section numbers only go forward, and one at a time: "1. Each
+      // transaction is…" in the middle of section 4 is a list. The step is
+      // bounded too, allowing for one missed heading, because a single false
+      // leap forward would otherwise reject every real heading after it.
+      const top = topNumber(line);
+      // The first numbered heading may be any section: extraction can miss the
+      // early ones, and bounding the start would then reject every heading.
+      if (!numberedPaper || top < lastTop || (lastTop > 0 && top > lastTop + 2)) {
+        return false;
+      }
+      lastTop = topNumber(line);
+      return true;
+    }
+    return !numberedPaper && proseFollows(lines, i);
+  };
+
   for (let i = firstContentIdx; i < lines.length; i++) {
     const line = lines[i]!;
-    if (isHeading(line)) {
+    if (startsSection(i)) {
       flush();
       currentHeading = line.trim().replace(/[:.]+$/, "");
     } else {
@@ -429,7 +622,17 @@ export function parsePaperStructure(raw: string): PaperStructure {
   let abstract = "";
   let abstractLines: SourceLine[] | undefined;
   const kept: PaperSection[] = [];
+  // Once the bibliography or an appendix begins, the paper proper has ended.
+  // Dropping only the section with that heading was not enough: a reference
+  // entry that looked like a heading ("2025. Accessed: …") started a new
+  // "section", and the rest of the bibliography leaked back in as content.
+  let ended = false;
   for (const s of sections) {
+    if (ended) continue;
+    if (isEndMatter(s.heading)) {
+      ended = true;
+      continue;
+    }
     const norm = normalizeHeading(s.heading);
     if (norm === "abstract") {
       abstract = s.content;
@@ -585,6 +788,68 @@ const PAGE_SEPARATOR = "\n\n";
  * from pdf-parse's return value, so the recorded offsets cannot drift from the
  * text they index no matter what the library does internally.
  */
+/**
+ * The gap between two text fragments on a line, in ems, above which a word
+ * break belongs between them. Set between what three papers measured: joins
+ * inside a word under 0.05 em, missing spaces at 0.15 em and up.
+ */
+const WORD_GAP_EM = 0.12;
+/** A gap this wide separates columns — byline names, table cells — not words. */
+const COLUMN_GAP_EM = 1;
+
+/** One text fragment of a page, as pdf.js returns it. */
+export interface TextItem {
+  str: string;
+  /** The text matrix: [4] and [5] are x and y; [0] and [1] scale with font size. */
+  transform: number[];
+  /** The fragment's advance, in the same units as x. */
+  width?: number;
+}
+
+/**
+ * Join a page's fragments into lines of text.
+ *
+ * A new line starts wherever the baseline moves. On the same line, fragments
+ * are joined directly unless the gap between them is wide enough to be a word
+ * break (see `WORD_GAP_EM`).
+ */
+export function joinTextItems(items: TextItem[]): string {
+  let lastY: number | undefined;
+  let lastEnd: number | undefined;
+  let text = "";
+  for (const item of items) {
+    const [a = 0, b = 0, , , x = 0, y = 0] = item.transform;
+    if (lastY === undefined || lastY === y) {
+      // Same line. pdf.js hands back a line as fragments, and where a word
+      // break fell between two of them the space is often not in either:
+      // "by more than" + "2.0 BLEU". The gap between them says whether one
+      // belongs there — measured, fragments inside a word touch (under
+      // 0.05 em apart) and missing word breaks sit at 0.15 em or more.
+      const size = Math.hypot(a, b) || 1;
+      const gap = lastEnd === undefined ? 0 : (x - lastEnd) / size;
+      const joined = !/\s$/.test(text) && !/^\s/.test(item.str);
+      // A gap of an em or more is not a word break but a column's: names in a
+      // byline, cells in a table. Two spaces keep that visible, which is what
+      // lets the title stop at a byline now that its names are no longer run
+      // together (see `looksLikeAuthorLine`).
+      const sep =
+        !joined || !text
+          ? ""
+          : gap >= COLUMN_GAP_EM
+            ? "  "
+            : gap >= WORD_GAP_EM
+              ? " "
+              : "";
+      text += sep + item.str;
+    } else {
+      text += `\n${item.str}`;
+    }
+    lastY = y;
+    lastEnd = x + (item.width ?? 0);
+  }
+  return text;
+}
+
 export async function extractSourceFromPdf(data: Buffer): Promise<PaperSource> {
   // Import the internal module directly to avoid pdf-parse's index debug path.
   const pdf = (await import("pdf-parse/lib/pdf-parse.js")).default;
@@ -596,13 +861,7 @@ export async function extractSourceFromPdf(data: Buffer): Promise<PaperSource> {
         normalizeWhitespace: false,
         disableCombineTextItems: false,
       });
-      let lastY: number | undefined;
-      let text = "";
-      for (const item of content.items) {
-        text +=
-          lastY === item.transform[5] || lastY === undefined ? item.str : `\n${item.str}`;
-        lastY = item.transform[5];
-      }
+      const text = joinTextItems(content.items);
       // Normalized here, once, so that `PaperSource.text` is already in the
       // form the parser works in and a recorded offset means the same thing on
       // both sides. The replacements below are the parser's own.
@@ -635,9 +894,28 @@ export async function extractTextFromPdf(data: Buffer): Promise<string> {
 }
 
 /** Full pipeline: PDF bytes -> clean, structured paper, with its pages kept. */
-export async function extractPaper(data: Buffer): Promise<PaperStructure> {
-  const source = await extractSourceFromPdf(data);
-  return { ...parsePaperStructure(source.text), source };
+export function extractPaper(data: Buffer): Promise<PaperStructure> {
+  // Extraction decides what every later stage can possibly say, so what it
+  // produced — how many sections, how many pages, which title it settled on —
+  // is the first thing worth knowing when an episode comes out wrong.
+  return withSpanFor(
+    "extract paper",
+    { [TA.PAPERCAST_IMAGE_BYTES]: data.length, ...tags("extract") },
+    async (span) => {
+      const source = await extractSourceFromPdf(data);
+      const paper = { ...parsePaperStructure(source.text), source };
+      span.setAttributes({
+        [TA.PAPERCAST_PAPER_TITLE]: paper.title ?? "",
+        [TA.PAPERCAST_SECTION_COUNT]: paper.sections.length,
+        [TA.PAPERCAST_PAPER_WORDS]: paper.wordCount,
+        [TA.PAPERCAST_PAGE_COUNT]: source.pages?.length ?? 0,
+        // Headings are structure rather than content, so they travel without
+        // payload capture: they are what makes a bad extraction obvious.
+        [TA.PAPERCAST_SECTIONS]: paper.sections.map((x) => x.heading).join(" · "),
+      });
+      return paper;
+    },
+  );
 }
 
 /** The page a character offset in `source.text` falls on, if any. */

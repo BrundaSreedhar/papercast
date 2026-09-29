@@ -12,6 +12,7 @@
  * a turn of fifty words produced two seconds of audio does not.
  */
 import { parseWav, type ParsedWav } from "../tts/wav";
+import { pitchFloorHz } from "./voice";
 import type { EpisodeAudio, TurnTiming } from "../tts/types";
 import type { Episode } from "../llm/schema";
 import type { CheckResult, DeterministicReport } from "./types";
@@ -226,6 +227,71 @@ export function checkNoSilentTurns(ctx: AudioCheckContext): CheckResult {
 }
 
 /**
+ * How far one turn's pitch floor may sit from the speaker's usual floor before
+ * it counts as a different voice. Set between what was measured: stable voices
+ * stayed within 10%, a narrator that drifted into another man reached 22%.
+ */
+const VOICE_FLOOR_TOLERANCE = 0.16;
+/** A speaker needs this many measured turns before "usual" means anything. */
+const VOICE_MIN_TURNS = 3;
+
+/**
+ * Each speaker keeps one voice from start to finish.
+ *
+ * A single-narrator episode voiced by Gemini came back as two different men:
+ * each turn is its own generation, and the named voice drifted between them.
+ * Every other check passed, because every turn was voiced, timed and audible,
+ * and the listener was the one who noticed. The format's whole promise is one
+ * voice, and a dialogue's is two that stay put, so the check holds every
+ * speaker to its own usual pitch floor (see `./voice`).
+ */
+export function checkVoiceConsistency(ctx: AudioCheckContext): CheckResult {
+  const id = "voice-consistency";
+  const label = "Each speaker keeps one voice";
+  let parsed: ParsedWav;
+  try {
+    parsed = parseWav(ctx.audio.audio);
+  } catch {
+    return fail(id, label, "error", "Audio could not be read.");
+  }
+
+  const bySpeaker = new Map<string, { turnIndex: number; floor: number }[]>();
+  for (const t of ctx.audio.timings) {
+    const speaker = ctx.episode.turns[t.turnIndex]?.speaker ?? t.speaker;
+    const floor = pitchFloorHz(parsed, t.startMs, t.endMs);
+    if (floor === undefined) continue;
+    bySpeaker.set(speaker, [
+      ...(bySpeaker.get(speaker) ?? []),
+      { turnIndex: t.turnIndex, floor },
+    ]);
+  }
+
+  const offenders: string[] = [];
+  for (const [speaker, turns] of bySpeaker) {
+    if (turns.length < VOICE_MIN_TURNS) continue;
+    const sorted = turns.map((t) => t.floor).sort((a, b) => a - b);
+    const usual = sorted[Math.floor(sorted.length / 2)]!;
+    for (const t of turns) {
+      const off = t.floor / usual - 1;
+      if (Math.abs(off) > VOICE_FLOOR_TOLERANCE) {
+        offenders.push(
+          `${speaker} turn ${t.turnIndex} sits ${Math.round(Math.abs(off) * 100)}% ${off > 0 ? "above" : "below"} that speaker's usual pitch (${Math.round(t.floor)} Hz against ${Math.round(usual)} Hz)`,
+        );
+      }
+    }
+  }
+
+  return offenders.length === 0
+    ? ok(id, label, "error")
+    : fail(
+        id,
+        label,
+        "error",
+        `Sounds like more than one voice: ${offenders.slice(0, 4).join("; ")}.`,
+      );
+}
+
+/**
  * Whether the episode actually lasts as long as it was asked to. This closes
  * the loop that the word-count target only half measures: a script can hit its
  * word budget and still produce a much shorter episode than requested.
@@ -258,6 +324,7 @@ export const ALL_AUDIO_CHECKS = [
   checkNoSilentTurns,
   checkSpeechRate,
   checkEpisodeDuration,
+  checkVoiceConsistency,
 ];
 
 export function runAudioChecks(ctx: AudioCheckContext): DeterministicReport {

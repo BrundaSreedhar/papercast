@@ -4,7 +4,15 @@
  * four spellings of one idea — because a busy map says less than a sparse one.
  */
 import { describe, it, expect } from "vitest";
-import { acronymExpansions, buildConceptMap, conceptsFor, sharedConcepts } from "./index";
+import {
+  acronymExpansions,
+  buildConceptMap,
+  conceptKey,
+  conceptsFor,
+  sharedConcepts,
+  type Concept,
+  type ConceptRelationInput,
+} from "./index";
 import type { EpisodeSummary } from "../library/types";
 
 /*
@@ -167,6 +175,15 @@ describe("conceptsFor", () => {
     expect(map.get("aws")).toBe("amazon web services");
   });
 
+  it("counts one initial per part of a hyphenated word", () => {
+    // "Retrieval-Augmented Generation" is RAG, not RG, and missing it left
+    // both "rag" and its expansion on the map as separate ideas.
+    const map = acronymExpansions(
+      "We use Retrieval-Augmented Generation (RAG) for context.",
+    );
+    expect(map.get("rag")).toBe("retrieval-augmented generation");
+  });
+
   it("knows the plural acronym, which is how prose writes it", () => {
     const map = acronymExpansions("small language models (SLMs) are useful");
     expect(map.get("slm")).toBe("small language models");
@@ -191,20 +208,37 @@ describe("conceptsFor", () => {
 
 const episode = (
   id: string,
-  terms: string[],
-): EpisodeSummary & { concepts: ReturnType<typeof conceptsFor> } =>
+  terms: (string | Partial<Concept>)[],
+  paperTitle = id,
+): EpisodeSummary & { concepts: Concept[] } =>
   ({
     id,
     createdAt: 1,
-    paperTitle: id,
+    paperTitle,
     minutes: 4,
     format: "dialogue",
     turnCount: 1,
     hasAudio: false,
     summary: "",
     keyPoints: [],
-    concepts: terms.map((term, i) => ({ term, weight: 1 - i * 0.1 })),
+    concepts: terms.map((t, i) => ({
+      weight: 1 - i * 0.1,
+      context: "",
+      ...(typeof t === "string" ? { term: t } : t),
+    })),
   }) as never;
+
+const rel = (
+  source: string,
+  type: ConceptRelationInput["type"],
+  target: string,
+): ConceptRelationInput => ({
+  source,
+  type,
+  target,
+  explanation: `${source} ${type} ${target}`,
+  evidence: { text: "quote" },
+});
 
 describe("buildConceptMap", () => {
   it("links two concepts that an episode covers together", () => {
@@ -244,10 +278,117 @@ describe("buildConceptMap", () => {
     expect(sharedConcepts(map).map((c) => c.term)).toEqual(["attention"]);
   });
 
+  it("does not call two episodes of one paper a connection", () => {
+    // Regenerating a paper made it share every concept with itself.
+    const map = buildConceptMap([
+      episode("a", ["attention", "transformer"], "Attention Is All You Need"),
+      episode("b", ["attention", "transformer"], "Attention is all you need"),
+    ]);
+    expect(sharedConcepts(map)).toEqual([]);
+    expect(map.concepts.find((c) => c.term === "attention")!.episodes).toEqual([
+      "a",
+      "b",
+    ]);
+  });
+
+  it("joins two papers that call one idea by different names", () => {
+    const map = buildConceptMap([
+      episode("a", [
+        { term: "large language model", label: "large language model", aliases: ["LLM"] },
+      ]),
+      episode("b", [{ term: "llms", label: "LLMs" }]),
+    ]);
+    expect(map.concepts).toHaveLength(1);
+    expect(sharedConcepts(map).map((c) => c.term)).toEqual(["large language model"]);
+  });
+
+  it("joins spellings that differ only in case, hyphens, plurals or a leading 'the'", () => {
+    const map = buildConceptMap([
+      episode("a", [{ term: "the transformer", label: "Transformer" }, "self-attention"]),
+      episode("b", ["transformers", "self attention"]),
+    ]);
+    expect(
+      sharedConcepts(map)
+        .map((c) => c.term)
+        .sort(),
+    ).toEqual(["self attention", "transformer"]);
+    expect(map.concepts.find((c) => c.term === "transformer")!.label).toBe("Transformer");
+  });
+
+  it("carries a definition onto the node", () => {
+    const map = buildConceptMap([
+      episode("a", [
+        { term: "transformer", definition: "A model built only on attention." },
+      ]),
+    ]);
+    expect(map.concepts[0]!.definition).toBe("A model built only on attention.");
+  });
+
+  it("names a relation's ends the way it names the concepts", () => {
+    const map = buildConceptMap([
+      {
+        ...episode("a", [
+          { term: "the transformer", label: "Transformer" },
+          { term: "large language model", aliases: ["LLM"] },
+        ]),
+        relations: [rel("large language model", "is-a", "the transformer")],
+      },
+      episode("b", ["llms"]),
+    ]);
+    expect(map.relations).toHaveLength(1);
+    expect(map.relations[0]).toMatchObject({
+      source: "large language model",
+      type: "is-a",
+      target: "transformer",
+      episodes: ["a"],
+    });
+  });
+
+  it("counts one relation stated by two papers once, with both papers", () => {
+    const map = buildConceptMap([
+      {
+        ...episode("a", ["transformer", "self attention"]),
+        relations: [rel("self attention", "part-of", "transformer")],
+      },
+      {
+        ...episode("b", ["transformers", "self-attention"]),
+        relations: [rel("self-attention", "part-of", "transformers")],
+      },
+    ]);
+    expect(map.relations).toHaveLength(1);
+    expect(map.relations[0]!.papers).toHaveLength(2);
+  });
+
+  it("drops a relation to a concept the episode does not have", () => {
+    const map = buildConceptMap([
+      {
+        ...episode("a", ["transformer"]),
+        relations: [rel("recurrence", "contrasts-with", "transformer")],
+      },
+    ]);
+    expect(map.relations).toEqual([]);
+  });
+
   it("copes with a library of one, which is where everyone starts", () => {
     const map = buildConceptMap([episode("a", ["attention"])]);
     expect(map.concepts).toHaveLength(1);
     expect(map.edges).toEqual([]);
     expect(sharedConcepts(map)).toEqual([]);
+  });
+});
+
+describe("conceptKey", () => {
+  it("normalizes the ways one idea gets spelt", () => {
+    expect(conceptKey("The Transformer")).toBe("transformer");
+    expect(conceptKey("Self-Attention")).toBe("self attention");
+    expect(conceptKey("Large Language Models")).toBe("large language model");
+    expect(conceptKey("LLMs")).toBe("llm");
+    expect(conceptKey("dependencies")).toBe("dependency");
+  });
+
+  it("leaves words that only look plural", () => {
+    expect(conceptKey("consensus")).toBe("consensus");
+    expect(conceptKey("analysis")).toBe("analysis");
+    expect(conceptKey("loss")).toBe("loss");
   });
 });

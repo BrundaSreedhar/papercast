@@ -13,7 +13,12 @@ declare module "pdf-parse/lib/pdf-parse.js" {
   /** One page, as pdf.js hands it to a renderer. */
   interface PdfPageData {
     getTextContent: (options: unknown) => Promise<{
-      items: { str: string; transform: number[] }[];
+      /**
+       * `transform` is the text matrix: [4] and [5] are x and y, [0] and [1]
+       * scale with the font size. `width` is the fragment's advance, in the
+       * same units as x.
+       */
+      items: { str: string; transform: number[]; width?: number }[];
     }>;
   }
 

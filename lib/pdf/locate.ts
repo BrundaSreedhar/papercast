@@ -62,6 +62,9 @@ const MIN_WORDS = 4;
 /** Distinct content words a quote needs before it can be placed at all. */
 const MIN_CONTENT_WORDS = 4;
 
+/** Tied best windows compared at most; enough for any real passage, bounded for speed. */
+const MAX_TIED_WINDOWS = 400;
+
 /** How much wider than the quote the search window runs. */
 const WINDOW_SLACK = 1.6;
 
@@ -196,8 +199,36 @@ export class PaperLocator {
     const needle = normalize(quote).text;
     if (!needle) return undefined;
     const at = this.normalized.text.indexOf(needle);
-    if (at === -1) return undefined;
-    return this.toCitation(at, at + needle.length, "exact", 1);
+    if (at !== -1) return this.toCitation(at, at + needle.length, "exact", 1);
+
+    // The same passage with the spaces taken out of both sides. PDF extraction
+    // loses the space between some words — "by more than2.0 BLEU", "ofN= 6" —
+    // and a quote copied correctly from the prose then misses the exact match
+    // over one space and falls through to the fuzzy one, which is where
+    // citations end up with the wrong section's name.
+    const squeezed = needle.replace(/ /g, "");
+    if (squeezed.length < 12) return undefined;
+    const { text, map } = this.squeezed();
+    const hit = text.indexOf(squeezed);
+    if (hit === -1) return undefined;
+    return this.toCitation(map[hit]!, map[hit + squeezed.length - 1]! + 1, "exact", 1);
+  }
+
+  private squeezedCache?: { text: string; map: number[] };
+  /** The normalized text without its spaces, with each character's position in it. */
+  private squeezed(): { text: string; map: number[] } {
+    if (!this.squeezedCache) {
+      let text = "";
+      const map: number[] = [];
+      const n = this.normalized.text;
+      for (let i = 0; i < n.length; i++) {
+        if (n[i] === " ") continue;
+        text += n[i];
+        map.push(i);
+      }
+      this.squeezedCache = { text, map };
+    }
+    return this.squeezedCache;
   }
 
   /**
@@ -239,33 +270,78 @@ export class PaperLocator {
 
     for (let i = 0; i < size; i++) add(this.tokens[i]!.word);
 
+    // Every window that ties for the most matches is a candidate, not only the
+    // first: the earliest of several equal windows is the one reaching furthest
+    // back, and it tends to open in the section before the passage.
     let best = distinct;
-    let bestStart = 0;
+    let starts = [0];
     for (let i = size; i < this.tokens.length; i++) {
       add(this.tokens[i]!.word);
       drop(this.tokens[i - size]!.word);
       if (distinct > best) {
         best = distinct;
-        bestStart = i - size + 1;
+        starts = [i - size + 1];
+      } else if (distinct === best && starts.length < MAX_TIED_WINDOWS) {
+        starts.push(i - size + 1);
       }
     }
 
     const score = best / want.size;
     if (score < minScore) return undefined;
 
-    // Narrow the window to the words that actually matched. The window runs
-    // wider than the quote so a verbose passage still fits, and reporting its
-    // raw edges would attribute a citation to whatever section the window
-    // happened to open in — often the previous one.
-    const end = Math.min(bestStart + size, this.tokens.length);
-    let from = bestStart;
-    let to = end - 1;
-    while (from < end && !want.has(this.tokens[from]!.word)) from++;
-    while (to > from && !want.has(this.tokens[to]!.word)) to--;
+    // Of the tied windows, the one whose matches sit closest together: the
+    // passage itself is compact, and a window straddling a neighbour is not.
+    let from = 0;
+    let to = -1;
+    for (const start of starts) {
+      const span = this.tighten(start, Math.min(start + size, this.tokens.length), want);
+      if (to < from || span.to - span.from < to - from) ({ from, to } = span);
+    }
 
     const first = this.tokens[from]!;
     const last = this.tokens[to]!;
     return this.toCitation(first.at, last.at + last.word.length, "approximate", score);
+  }
+
+  /** The smallest span within [start, end) holding every quote word the window matched. */
+  private tighten(
+    start: number,
+    end: number,
+    want: Set<string>,
+  ): { from: number; to: number } {
+    // Narrow the window to the words that actually matched. The window runs
+    // wider than the quote so a verbose passage still fits, and reporting its
+    // raw edges would attribute a citation to whatever section the window
+    // happened to open in — often the previous one.
+    //
+    // Narrowed to the smallest span that still holds every word that matched,
+    // not merely to the first matching word: the sentence just before a passage
+    // often shares a few of its words ("…improves accuracy and BLEU score" ahead
+    // of "…by more than 2.0 BLEU … BLEU score of 28.4"), and stopping at the
+    // first of them opened the citation in the previous section and named that.
+    let from = start;
+    let to = end - 1;
+    const inSpan = new Map<string, number>();
+    for (let i = from; i <= to; i++) {
+      const w = this.tokens[i]!.word;
+      if (want.has(w)) inSpan.set(w, (inSpan.get(w) ?? 0) + 1);
+    }
+    const spare = (i: number) => {
+      const w = this.tokens[i]!.word;
+      return !want.has(w) || (inSpan.get(w) ?? 0) > 1;
+    };
+    while (from < to && spare(from)) {
+      const w = this.tokens[from]!.word;
+      if (want.has(w)) inSpan.set(w, inSpan.get(w)! - 1);
+      from++;
+    }
+    while (to > from && spare(to)) {
+      const w = this.tokens[to]!.word;
+      if (want.has(w)) inSpan.set(w, inSpan.get(w)! - 1);
+      to--;
+    }
+
+    return { from, to };
   }
 
   /** The segment covering a position in the rendered text, by binary search. */

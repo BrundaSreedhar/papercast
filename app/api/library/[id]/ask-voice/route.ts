@@ -6,8 +6,8 @@ import { WhisperCppProvider, whisperAvailable } from "@/lib/asr/index";
 import { askPaper } from "@/lib/chat/index";
 import { getEpisode } from "@/lib/library/store";
 import { getProvider } from "@/lib/llm/index";
-import { resolveTTSProvider } from "@/lib/tts/index";
-import { speak } from "@/lib/tts/speak";
+import { resolveTTSProvider, type TTSProviderName } from "@/lib/tts/index";
+import { answerVoiceFor, speak } from "@/lib/tts/speak";
 import { toJobError } from "@/lib/jobs/errors";
 import { activeProvider, type ProviderName } from "@/lib/config/env";
 
@@ -134,10 +134,15 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     // a voice model is missing would take that away too.
     let audioUrl: string | undefined;
     try {
-      const tts = await resolveTTSProvider();
+      // Sound like the episode this question is about, not like whatever
+      // TTS_PROVIDER says today. An episode voiced by Piper answering in a
+      // hosted voice is the same jarring seam as answering a two-host episode
+      // in a third voice — both were happening.
+      const tts = await voiceOf(record.ttsProvider);
       const said = await speak(
         spokenAnswer(reply.answer, form?.get("resuming") === "true"),
         tts,
+        answerVoiceFor(record.format),
       );
       const name = `answer-${randomUUID()}.wav`;
       await mkdir(AUDIO_DIR, { recursive: true });
@@ -153,4 +158,22 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     const e = toJobError(err);
     return NextResponse.json({ error: e.message, remedy: e.remedy }, { status: 502 });
   }
+}
+
+/**
+ * The backend that voiced an episode, or the configured one.
+ *
+ * Records made before the backend was stored carry nothing, and a backend that
+ * worked once may be gone now — a key removed, a binary uninstalled. Neither is
+ * a reason to refuse to speak, so both fall back to whatever is configured.
+ */
+async function voiceOf(name: string | undefined) {
+  if (name) {
+    try {
+      return await resolveTTSProvider(name as TTSProviderName);
+    } catch {
+      // Fall through to the configured backend.
+    }
+  }
+  return resolveTTSProvider();
 }

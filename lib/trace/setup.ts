@@ -25,6 +25,8 @@ import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from "./attributes";
 import { setCapturePayloads, setEnabled } from "./tracer";
 import { WaterfallProcessor } from "./waterfall";
 import { LogProcessor } from "./log";
+import { DetailProcessor, fileSink, type DetailSink } from "./detail";
+import { langsmithConfig, langsmithExporterOptions } from "./langsmith";
 
 export interface InitOptions {
   serviceName?: string;
@@ -42,6 +44,14 @@ export interface InitOptions {
    * is more setup than someone wants in order to see which model was called.
    */
   log?: (line: string) => void;
+  /**
+   * Write every span in full, as JSON, through this sink.
+   *
+   * Defaults to a file named by `TRACE_DETAIL_FILE`. Separate from `log`
+   * because they answer different questions: one is a line to glance at while
+   * a server runs, this is the record to read afterwards.
+   */
+  detail?: DetailSink;
   /** Test seam — extra processors, e.g. an in-memory exporter. */
   processors?: SpanProcessor[];
 }
@@ -55,6 +65,28 @@ function otlpConfigured(): boolean {
     process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT?.trim() ||
     process.env.OTEL_EXPORTER_OTLP_ENDPOINT?.trim(),
   );
+}
+
+/**
+ * Whether anything is configured that spans could be sent to.
+ *
+ * Both entrypoints used to test for an OTLP endpoint by hand, which meant a
+ * LangSmith key or a detail-log path did nothing until someone also passed
+ * `--trace`. Setting a key is a clear enough statement of intent.
+ */
+export function tracingDestinationConfigured(): boolean {
+  return Boolean(
+    otlpConfigured() ||
+    langsmithConfig() ||
+    process.env.TRACE_DETAIL_FILE?.trim() ||
+    process.env.TRACE_LOG?.trim() === "1",
+  );
+}
+
+/** A file sink when TRACE_DETAIL_FILE names one, and nothing otherwise. */
+function detailFileSink(): DetailSink | undefined {
+  const path = process.env.TRACE_DETAIL_FILE?.trim();
+  return path ? fileSink(path) : undefined;
 }
 
 function envFlag(name: string): boolean {
@@ -78,12 +110,26 @@ export function initTracing(opts: InitOptions = {}): void {
 
   if (opts.log) processors.push(new LogProcessor(opts.log));
 
+  const detail = opts.detail ?? detailFileSink();
+  if (detail) processors.push(new DetailProcessor(detail));
+
   // Only when an endpoint is actually configured. The exporter defaults to
   // http://localhost:4318 when constructed bare, so building it
   // unconditionally would leave a machine with no collector retrying refused
   // connections in the background for the whole run.
   if (otlpConfigured()) {
     processors.push(new BatchSpanProcessor(new OTLPTraceExporter()));
+  }
+
+  // LangSmith is reached over the same OTLP the rest of this speaks, so it is
+  // an exporter rather than an integration. A second one: a run can land in
+  // LangSmith and in a local Grafana at once, which is the point of having
+  // written the spans to a spec instead of to a vendor.
+  const langsmith = langsmithConfig();
+  if (langsmith) {
+    processors.push(
+      new BatchSpanProcessor(new OTLPTraceExporter(langsmithExporterOptions(langsmith))),
+    );
   }
 
   if (opts.processors) processors.push(...opts.processors);

@@ -69,6 +69,23 @@ export const geminiConfig = () => ({
   ),
 });
 
+/**
+ * Gemini's TTS models, which are reached natively rather than over the
+ * OpenAI-compatible endpoint the LLM path uses — that layer does not carry
+ * speech.
+ *
+ * Voices are the prebuilt names Google publishes. Three rather than two,
+ * because a solo or ELI5 episode speaks as `narrator` and giving it the host's
+ * voice would make the two formats indistinguishable by ear.
+ */
+export const geminiTtsConfig = () => ({
+  apiKey: req("GEMINI_API_KEY"),
+  model: opt("GEMINI_TTS_MODEL", "gemini-3.1-flash-tts-preview"),
+  hostVoice: opt("GEMINI_HOST_VOICE", "Kore"),
+  guestVoice: opt("GEMINI_GUEST_VOICE", "Puck"),
+  narratorVoice: opt("GEMINI_NARRATOR_VOICE", "Charon"),
+});
+
 export const openConfig = () => ({
   baseURL: opt("OPEN_BASE_URL", "http://localhost:11434/v1"),
   // Local runtimes (Ollama) accept any non-empty key.

@@ -3,6 +3,7 @@ import type { PaperStructure } from "../pdf/extract";
 import type { TurnCitation } from "../ground/index";
 import type { TurnTiming } from "../tts/types";
 import type { JobCost, JobReview } from "../jobs/types";
+import type { PaperConcept, PaperRelation } from "../concepts/extract";
 
 /**
  * A finished episode, kept after the job that made it has gone.
@@ -36,6 +37,16 @@ export interface EpisodeRecord {
   totalMs?: number;
   /** False when the run produced a transcript only. */
   hasAudio: boolean;
+  /**
+   * Which backend voiced this episode, and with which voices.
+   *
+   * Stored because answering a question out loud later has to sound like the
+   * episode it is about. Without it the answer is spoken by whatever
+   * `TTS_PROVIDER` happens to say today, so changing the setting silently gives
+   * every past episode a new narrator — which is exactly what happened.
+   */
+  ttsProvider?: string;
+  voices?: string;
   transcriptRecall?: number;
   review?: JobReview;
   cost?: JobCost;
@@ -55,15 +66,39 @@ export interface EpisodeRecord {
   timings?: TurnTiming[];
   /** The paper as every model saw it, so later answers cite the same text. */
   paper: PaperStructure;
+  /**
+   * The paper's key concepts, named by a model and grounded in the paper.
+   *
+   * Stored rather than derived like the lexical fallback, because producing
+   * them costs a model call, and a page anyone can open must not make one.
+   * Absent on episodes made before extraction existed or where it failed;
+   * `npm run concepts` fills them in.
+   */
+  concepts?: PaperConcept[];
+  /**
+   * How those concepts relate, each with the passage that says so.
+   *
+   * Present, possibly empty, whenever `concepts` came from a run that asked for
+   * relations; absent on records from before that.
+   */
+  relations?: PaperRelation[];
 }
 
 /** What the library list shows, without the weight of a whole episode. */
 export type EpisodeSummary = Omit<
   EpisodeRecord,
-  "episode" | "citations" | "timings" | "paper"
+  "episode" | "citations" | "timings" | "paper" | "concepts" | "relations"
 >;
 
 export function toSummary(record: EpisodeRecord): EpisodeSummary {
-  const { episode: _e, citations: _c, timings: _t, paper: _p, ...summary } = record;
+  const {
+    episode: _e,
+    citations: _c,
+    timings: _t,
+    paper: _p,
+    concepts: _k,
+    relations: _r,
+    ...summary
+  } = record;
   return summary;
 }

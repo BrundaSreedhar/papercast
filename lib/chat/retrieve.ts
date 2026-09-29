@@ -10,20 +10,32 @@
  *
  * So the two paths differ, and only this one retrieves.
  *
- * Scoring is lexical — a BM25-shaped sum over the question's content words —
- * because it needs no model, no key and no endpoint, and because a question and
- * the section that answers it usually share the paper's own vocabulary. There
- * is no index: a paper has a few dozen sections, and scoring them all is
- * microseconds.
+ * Two rankers, fused. Lexical scoring is a BM25-shaped sum over the question's
+ * content words, and it needs no model, no key and no endpoint — which is why
+ * it, alone, decides whether retrieval happens at all. Dense scoring embeds the
+ * question and the sections and compares them, which catches the questions
+ * lexical matching is blind to, because a reader asks in their own words and a
+ * paper answers in its own. That half runs through a FAISS index
+ * (`lib/embed/faiss.ts`); it is exhaustive rather than approximate, so it is
+ * the same ranking the cosine loop produced, computed in C++.
+ *
+ * Measured on Attention Is All You Need, five questions whose answering section
+ * was known in advance: lexical scoring alone lost two of them. "Why did they
+ * stop using recurrence?" never selected "Why Self-Attention", and "how well
+ * did it do at translating into German?" never selected "Machine Translation" —
+ * neither section uses the word the reader used. Fusing the two rankers
+ * recovered both and lost none of the three lexical scoring already had.
  *
  * The failure that matters is not a wrong section, it is a missing one, because
- * the model will then say the paper does not address something it does. Three
- * things guard against it: the abstract and introduction are always included
- * since they are the paper's own account of itself, the budget is generous
- * rather than minimal, and a question that matches nothing falls back to the
- * whole paper instead of guessing.
+ * the model will then say the paper does not address something it does. Four
+ * things guard against it: the abstract and introduction are included when
+ * there is room since they are the paper's own account of itself, the budget is
+ * generous rather than minimal, a question that matches nothing falls back to
+ * the whole paper instead of guessing, and dense retrieval may reorder that
+ * fallback but never overrule it — see `bm25 keeps the veto` below.
  */
 import { paperToText, type PaperStructure } from "../pdf/extract";
+import { faissScorer, type DenseScorer } from "../embed/faiss";
 
 export interface Retrieved {
   /** The text to send, in document order. */
@@ -32,6 +44,30 @@ export interface Retrieved {
   sections: string[];
   /** True when retrieval declined and the whole paper is being sent. */
   whole: boolean;
+  /**
+   * Which rankers actually ran.
+   *
+   * "hybrid" only when embedding was available and returned vectors, so this
+   * reports what happened rather than what was configured.
+   */
+  method: "lexical" | "hybrid";
+}
+
+/**
+ * Scores each passage against the question, or undefined when it cannot.
+ *
+ * Injectable so the fusion can be tested without an embedding endpoint, and so
+ * a different vector store can be dropped in without this file knowing — which
+ * is exactly how FAISS arrived: it is one implementation of this type, and
+ * nothing in the fusion below had to change for it.
+ */
+export type { DenseScorer };
+
+export interface RetrieveOptions {
+  /** Characters of paper to aim for. */
+  budget?: number;
+  /** Pass null to skip dense scoring entirely. */
+  dense?: DenseScorer | null;
 }
 
 /**
@@ -47,6 +83,24 @@ const DEFAULT_BUDGET = 10_000;
 
 /** Below this a paper is small enough that choosing part of it saves nothing. */
 const MIN_PAPER_CHARS = 8_000;
+
+/**
+ * How many sections dense scoring may put forward that lexical scoring did not.
+ *
+ * Small on purpose. Cosine ranks every section whether or not any of them is
+ * relevant, so the tail of this list is always noise; the head is where the
+ * paraphrased question is rescued.
+ */
+const DENSE_CANDIDATES = 5;
+
+/**
+ * Reciprocal rank fusion's damping constant, at its conventional 60.
+ *
+ * Fusing by rank rather than by score is the point: BM25 is unbounded and
+ * cosine sits in a narrow band near 0.5, so any attempt to add or average the
+ * two scores directly is really a hidden decision about which ranker wins.
+ */
+const RRF_K = 60;
 
 /** Sections whose own words make them worth having whatever the question is. */
 const ALWAYS = /^(abstract|\d+\.?\s*)?(introduction|background)?$/i;
@@ -66,24 +120,47 @@ function terms(text: string): string[] {
   return (text.toLowerCase().match(WORD) ?? []).filter((w) => !STOP.has(w));
 }
 
-/**
- * Pick the sections most likely to answer a question.
- *
- * Returns the whole paper when it is short, when nothing matches, or when the
- * selection would not be meaningfully smaller — in every one of those cases
- * retrieving is cost without benefit.
- */
-export function retrieveForQuestion(
-  paper: PaperStructure,
-  question: string,
-  budget = DEFAULT_BUDGET,
-): Retrieved {
-  const whole = paperToText(paper);
-  const asked = terms(question);
-  if (whole.length <= MIN_PAPER_CHARS || asked.length === 0) {
-    return { text: whole, sections: [], whole: true };
-  }
+/** Rank of each index in a scoring, best first; absent when it did not score. */
+function ranking(
+  scores: number[],
+  keep: (score: number) => boolean,
+): Map<number, number> {
+  const order = scores
+    .map((score, i) => ({ i, score }))
+    .filter((s) => keep(s.score))
+    .sort((a, b) => b.score - a.score);
+  return new Map(order.map((s, rank) => [s.i, rank]));
+}
 
+/** Sections ranked against a query, best first. */
+export interface RankedSections {
+  /** Indices into `paper.sections`, best first. */
+  order: number[];
+  /**
+   * Whether lexical scoring matched anything.
+   *
+   * When it did not, any order came from dense scoring alone, which ranks every
+   * section whether or not one is relevant — so a caller should treat it as a
+   * guess, never as evidence the paper covers the question.
+   */
+  lexicalMatch: boolean;
+  method: Retrieved["method"];
+}
+
+/**
+ * Rank a paper's sections against a query: BM25, fused with dense scoring.
+ *
+ * Shared by the one-shot retrieval below and by the agent's search tool, so
+ * both rank exactly the same way. `requireLexical` is the veto: with it, a
+ * query with no lexical purchase returns nothing rather than a dense guess.
+ */
+export async function rankSections(
+  paper: PaperStructure,
+  query: string,
+  opts: { dense?: DenseScorer | null; requireLexical?: boolean } = {},
+): Promise<RankedSections> {
+  const dense = opts.dense === undefined ? faissScorer : opts.dense;
+  const requireLexical = opts.requireLexical ?? true;
   const sections = paper.sections;
   const bodies = sections.map((s) => terms(s.content));
 
@@ -96,11 +173,11 @@ export function retrieveForQuestion(
   const idf = (w: string) =>
     Math.log(1 + sections.length / (1 + (appearsIn.get(w) ?? 0)));
 
-  const wanted = new Set(asked);
+  const wanted = new Set(terms(query));
   const averageLength =
     bodies.reduce((n, b) => n + b.length, 0) / Math.max(1, bodies.length);
 
-  const scored = sections.map((section, i) => {
+  const lexical = sections.map((section, i) => {
     const body = bodies[i]!;
     const counts = new Map<string, number>();
     for (const w of body) if (wanted.has(w)) counts.set(w, (counts.get(w) ?? 0) + 1);
@@ -118,17 +195,94 @@ export function retrieveForQuestion(
     // A question's words in the heading are a strong signal: a paper titles a
     // section after what it is about.
     for (const w of terms(section.heading)) if (wanted.has(w)) score += 2 * idf(w);
-    return { i, section, score };
+    return score;
   });
 
-  const matched = scored.filter((s) => s.score > 0);
-  if (matched.length === 0) return { text: whole, sections: [], whole: true };
+  /*
+   * BM25 keeps the veto.
+   *
+   * Dense scoring cannot decide that retrieval should happen, only which
+   * sections it picks — because cosine has no way to say "none of these". On
+   * the Aurora paper the best section for an off-topic question scored 0.456
+   * against a genuine best of 0.541, which a threshold can just about separate;
+   * on Attention Is All You Need the same probe scored 0.497 against a genuine
+   * best of 0.506, which nothing can. So an absolute floor was measured and
+   * rejected: it works on one paper and silently stops working on the next.
+   * A question with no lexical purchase on the paper still falls back to the
+   * whole text, exactly as it did before dense retrieval existed.
+   */
+  const lexicalRank = ranking(lexical, (score) => score > 0);
+  if (lexicalRank.size === 0 && requireLexical) {
+    return { order: [], lexicalMatch: false, method: "lexical" };
+  }
+
+  let denseRank = new Map<number, number>();
+  let method: Retrieved["method"] = "lexical";
+  if (dense) {
+    const scores = await dense(
+      query,
+      sections.map((s) => `${s.heading}. ${s.content}`),
+    );
+    if (scores && scores.length === sections.length) {
+      method = "hybrid";
+      // Only the head of the dense ranking, and only for sections lexical
+      // scoring did not already put forward: the rest is cosine ordering noise.
+      const full = ranking(scores, () => true);
+      denseRank = new Map(
+        [...full].filter(([i, rank]) => rank < DENSE_CANDIDATES || lexicalRank.has(i)),
+      );
+    }
+  }
+
+  // Reciprocal rank fusion. With one ranker this is order-preserving, so the
+  // lexical-only path is exactly the ranking it was before.
+  const fused = [...new Set([...lexicalRank.keys(), ...denseRank.keys()])]
+    .map((i) => {
+      const l = lexicalRank.get(i);
+      const d = denseRank.get(i);
+      const score =
+        (l === undefined ? 0 : 1 / (RRF_K + l)) + (d === undefined ? 0 : 1 / (RRF_K + d));
+      return { i, score };
+    })
+    .sort((a, b) => b.score - a.score || a.i - b.i);
+
+  return { order: fused.map((f) => f.i), lexicalMatch: lexicalRank.size > 0, method };
+}
+
+/**
+ * Pick the sections most likely to answer a question.
+ *
+ * Returns the whole paper when it is short, when nothing matches, or when the
+ * selection would not be meaningfully smaller — in every one of those cases
+ * retrieving is cost without benefit.
+ */
+export async function retrieveForQuestion(
+  paper: PaperStructure,
+  question: string,
+  opts: RetrieveOptions = {},
+): Promise<Retrieved> {
+  const budget = opts.budget ?? DEFAULT_BUDGET;
+  const dense = opts.dense === undefined ? faissScorer : opts.dense;
+
+  const whole = paperToText(paper);
+  const asked = terms(question);
+  if (whole.length <= MIN_PAPER_CHARS || asked.length === 0) {
+    return { text: whole, sections: [], whole: true, method: "lexical" };
+  }
+
+  const sections = paper.sections;
+  const ranked = await rankSections(paper, question, { dense, requireLexical: true });
+  if (!ranked.lexicalMatch) {
+    return { text: whole, sections: [], whole: true, method: "lexical" };
+  }
+  const { method } = ranked;
+  const fused = ranked.order.map((i) => ({ i }));
 
   const chosen = new Set<number>();
   let used = 0;
 
   /*
-   * Whatever scored highest goes in first.
+   * Whatever ranked highest goes in first.
    *
    * The abstract and introduction used to be added before anything else, on the
    * reasoning that they are the paper's own account of itself. On a long paper
@@ -138,7 +292,8 @@ export function retrieveForQuestion(
    * mentioning ten gigabytes. Relevance is claimed first now, and framing gets
    * whatever is left.
    */
-  for (const { i, section } of matched.sort((a, b) => b.score - a.score)) {
+  for (const { i } of fused) {
+    const section = sections[i]!;
     if (used + section.content.length > budget && chosen.size > 0) continue;
     chosen.add(i);
     used += section.content.length;
@@ -154,7 +309,9 @@ export function retrieveForQuestion(
 
   // Nothing was excluded, so there is no saving to have and the full text keeps
   // the abstract and title framing that assembling parts would lose.
-  if (chosen.size === sections.length) return { text: whole, sections: [], whole: true };
+  if (chosen.size === sections.length) {
+    return { text: whole, sections: [], whole: true, method };
+  }
 
   const parts: string[] = [];
   if (paper.title) parts.push(`# ${paper.title}`);
@@ -169,5 +326,5 @@ export function retrieveForQuestion(
       picked.push(section.heading);
     });
 
-  return { text: parts.join("\n\n"), sections: picked, whole: false };
+  return { text: parts.join("\n\n"), sections: picked, whole: false, method };
 }

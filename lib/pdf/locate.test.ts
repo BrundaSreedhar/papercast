@@ -142,3 +142,42 @@ describe("PaperLocator", () => {
     ).toBeUndefined();
   });
 });
+
+describe("PaperLocator, on text extraction damaged", () => {
+  // Built from the real failure: the source lost the space in "than2.0", and
+  // the sentence before the passage shares a few of its words.
+  const RAW = [
+    "A Paper",
+    "",
+    "5.4 Regularization",
+    "Label smoothing hurts perplexity, as the model learns to be more unsure, but improves accuracy and BLEU score.",
+    "",
+    "6.1 Machine Translation",
+    "On the WMT 2014 English-to-German translation task, the big transformer model outperforms the best previously reported models by more than2.0 BLEU, establishing a new state-of-the-art BLEU score of 28.4.",
+  ].join("\n");
+  const damaged: PaperStructure = {
+    ...parsePaperStructure(RAW),
+    source: { text: RAW, pages: [{ page: 8, start: 0, end: RAW.length }] },
+  };
+
+  it("matches exactly across a space the PDF lost", () => {
+    const c = locateQuote(
+      damaged,
+      "outperforms the best previously reported models by more than 2.0 BLEU",
+    );
+    expect(c?.match).toBe("exact");
+    expect(c?.heading).toMatch(/machine translation/i);
+  });
+
+  it("opens a fuzzy match where the quoted passage starts, not a sentence early", () => {
+    // Paraphrased enough to need the fuzzy match; shares "model", "BLEU" and
+    // "score" with the sentence before it.
+    const c = locateQuote(
+      damaged,
+      "the big transformer model beat previously reported models by over 2.0 BLEU for a state-of-the-art BLEU score of 28.4",
+    );
+    expect(c?.match).toBe("approximate");
+    expect(c?.heading).toMatch(/machine translation/i);
+    expect(c?.text).not.toMatch(/label smoothing|improves accuracy/i);
+  });
+});

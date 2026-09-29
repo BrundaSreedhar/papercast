@@ -13,9 +13,13 @@ import { randomUUID } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { extractPaper } from "../pdf/extract";
 import { generateEpisode } from "../llm/generateEpisode";
+import { describeShortfall } from "../llm/length";
+import { annotate, capturePayloads, truncate } from "../trace/tracer";
+import { metadata, tags } from "../trace/langsmith";
 import { getProvider } from "../llm/index";
 import type { ProviderName } from "../config/env";
 import {
+  resolveFallbackTTS,
   resolveTTSProvider,
   synthesizeEpisode,
   type TTSProviderName,
@@ -28,6 +32,7 @@ import { estimateCost } from "../eval/report";
 import { toJobError } from "./errors";
 import { refineEpisode } from "../refine/index";
 import { groundTurns } from "../ground/index";
+import { extractConcepts } from "../concepts/extract";
 import { saveEpisode } from "../library/store";
 import type { EpisodeRecord } from "../library/types";
 import type { EpisodeFormat } from "../llm/generateEpisode";
@@ -83,6 +88,20 @@ export async function runJob(
     {
       [TA.GEN_AI_OPERATION_NAME]: "invoke_workflow",
       [TA.GEN_AI_WORKFLOW_NAME]: "paper-to-podcast",
+      ...tags(
+        "episode",
+        input.format ?? "dialogue",
+        input.provider,
+        input.revise && "revise",
+        input.verify && "verify",
+        input.audioPath ? "audio" : "transcript-only",
+      ),
+      ...metadata({
+        job_id: jobId,
+        paper_id: input.paperId,
+        minutes: input.minutes,
+        format: input.format ?? "dialogue",
+      }),
       [TA.PAPERCAST_JOB_ID]: jobId,
       [TA.PAPERCAST_MINUTES]: input.minutes,
       [TA.PAPERCAST_REVISE]: input.revise === true,
@@ -116,6 +135,26 @@ function ground(
     return groundTurns(episode, paper);
   } catch (err) {
     console.warn("[job] could not anchor turns to the paper:", err);
+    return undefined;
+  }
+}
+
+/**
+ * Name the paper's key concepts for the concept map, or return nothing.
+ *
+ * A model call, so it can fail the way review can; an episode that was produced
+ * must not be lost to it. Without stored concepts the map falls back to the
+ * lexical ones for this episode.
+ */
+async function mapConcepts(
+  jobId: string,
+  paper: Parameters<typeof extractConcepts>[0],
+  provider?: ProviderName,
+) {
+  try {
+    return await extractConcepts(paper, provider ? getProvider(provider) : getProvider());
+  } catch (err) {
+    console.warn(`[job ${jobId}] could not extract concepts:`, err);
     return undefined;
   }
 }
@@ -194,6 +233,13 @@ async function runJobStages(
       minutes: input.minutes,
       provider: input.provider ? getProvider(input.provider) : undefined,
       format: input.format,
+      // A continuation is a second model call, so it is worth saying why the
+      // wait got longer rather than letting the bar sit still.
+      onContinuation: () =>
+        emit({
+          percent: overallPercent("scripting", 0.7, stages),
+          message: "The episode came back short — asking for the rest",
+        }),
     });
     // LLM spend accumulates across scripting and review; the store replaces cost
     // fields rather than adding to them, so the running total lives here. It
@@ -207,9 +253,38 @@ async function runJobStages(
       usd: estimateCost(generated.model, llmUsage),
     });
 
+    // Length used to be invisible: the only check on it lives in the eval
+    // harness, which an ordinary run never touches, so an episode that came
+    // back at a third of its length reached the listener with nothing anywhere
+    // saying so. It is reported here whether or not it is a problem, because a
+    // number a person can compare to what they asked for is the whole fix.
+    const { length } = generated;
+    const shortfall = describeShortfall(length);
+    // The script and its measurements go on the run itself. The transcript is
+    // the thing the whole pipeline exists to produce, so it rides only with
+    // payload capture on — the same rule the prompts follow.
+    annotate({
+      [TA.PAPERCAST_WORDS]: length.words,
+      [TA.PAPERCAST_CHARS]: length.chars,
+      [TA.PAPERCAST_ESTIMATED_MINUTES]: Number(length.estimatedMinutes.toFixed(2)),
+      [TA.PAPERCAST_LENGTH_RATIO]: Number(length.ratio.toFixed(3)),
+      [TA.PAPERCAST_CONTINUATIONS]: generated.continuations,
+      ...(capturePayloads()
+        ? {
+            [TA.PAPERCAST_TRANSCRIPT]: truncate(
+              generated.episode.turns.map((t) => `${t.speaker}: ${t.text}`).join("\n\n"),
+            ),
+            [TA.PAPERCAST_SUMMARY]: truncate(generated.episode.summary, 1_000),
+            [TA.PAPERCAST_KEY_POINTS]: generated.episode.keyPoints.join(" · "),
+          }
+        : {}),
+    });
     await update({
       percent: overallPercent("scripting", 1, stages),
-      message: `Wrote ${generated.episode.turns.length} turns`,
+      message:
+        `Wrote ${length.turns} turns · ${length.words} words (~${length.estimatedMinutes.toFixed(1)} min)` +
+        (generated.continuations > 0 ? ", after a continuation" : "") +
+        (shortfall ? ` — still short: ${shortfall}` : ""),
       cost: costSoFar(),
     });
 
@@ -280,6 +355,13 @@ async function runJobStages(
     // describe the script that was actually kept. Best-effort like the ledger —
     // a failure to place turns must never cost an episode that was produced.
     const citations = ground(episode, paper);
+    annotate({
+      [TA.PAPERCAST_CITED_TURNS]: citations?.length ?? 0,
+      [TA.PAPERCAST_UNCITED_TURNS]: episode.turns.length - (citations?.length ?? 0),
+    });
+
+    const concepts = await mapConcepts(jobId, paper, input.provider);
+    if (concepts) llmUsage = addUsage(llmUsage, concepts.usage);
 
     if (!input.audioPath) {
       await shelve({
@@ -302,6 +384,8 @@ async function runJobStages(
         episode,
         citations,
         paper,
+        concepts: concepts?.concepts,
+        relations: concepts?.relations,
       });
       await update({
         stage: "done",
@@ -314,8 +398,19 @@ async function runJobStages(
 
     await step("synthesizing", 0, "Recording the episode");
     const tts = await resolveTTSProvider(input.ttsProvider);
+    // A hosted voice can be busy or down in a way a local one cannot, and by
+    // this point the episode has already cost model calls. Losing it to a
+    // preview endpoint under load is the worse outcome, so a local backend
+    // remakes it rather than the job failing.
+    const backupTts = await resolveFallbackTTS(tts);
     const audio = await synthesizeEpisode(episode, {
       provider: tts,
+      fallback: backupTts,
+      onFallback: (err, to) =>
+        emit({
+          percent: overallPercent("synthesizing", 0, stages),
+          message: `${tts.name} could not record this — starting again with ${to.name}`,
+        }),
       onProgress: (done, total) =>
         emit({
           percent: overallPercent("synthesizing", done / total, stages),
@@ -323,6 +418,14 @@ async function runJobStages(
         }),
     });
     await writeFile(input.audioPath, audio.audio);
+    annotate({
+      [TA.PAPERCAST_TTS_PROVIDER]: audio.provider,
+      [TA.PAPERCAST_VOICES]: audio.voices,
+      [TA.PAPERCAST_TTS_CALLS]: audio.calls,
+      ...(audio.fellBackFrom
+        ? { [TA.PAPERCAST_TTS_FELL_BACK_FROM]: audio.fellBackFrom }
+        : {}),
+    });
 
     const checks = runAudioChecks({
       episode,
@@ -331,7 +434,11 @@ async function runJobStages(
     });
     await update({
       percent: overallPercent("synthesizing", 1, stages),
-      message: `Recorded ${(audio.totalMs / 1000 / 60).toFixed(1)} minutes · ${checks.errors} audio errors`,
+      message:
+        `Recorded ${(audio.totalMs / 1000 / 60).toFixed(1)} minutes · ${checks.errors} audio errors` +
+        (audio.fellBackFrom
+          ? ` · ${audio.fellBackFrom} was unavailable, ${audio.provider} recorded it`
+          : ""),
       cost: { ttsCalls: audio.calls },
     });
 
@@ -386,6 +493,10 @@ async function runJobStages(
       keyPoints: episode.keyPoints,
       totalMs: audio.totalMs,
       hasAudio: true,
+      // What actually voiced it, which is not always what was configured: a
+      // hosted backend may have failed and the local one remade the episode.
+      ttsProvider: audio.provider,
+      voices: audio.voices,
       transcriptRecall,
       review,
       cost: { ...costSoFar(), ttsCalls: audio.calls },
@@ -393,6 +504,8 @@ async function runJobStages(
       citations,
       timings: audio.timings,
       paper,
+      concepts: concepts?.concepts,
+      relations: concepts?.relations,
     });
 
     await update({

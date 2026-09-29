@@ -41,7 +41,11 @@ class StubProvider implements LLMProvider {
 describe("generateEpisode", () => {
   it("passes the episode schema and returns the parsed episode", async () => {
     const provider = new StubProvider();
-    const result = await generateEpisode(PAPER, { provider, minutes: 5 });
+    const result = await generateEpisode(PAPER, {
+      provider,
+      minutes: 5,
+      maxContinuations: 0,
+    });
 
     expect(result.episode.turns[0]!.speaker).toBe("host");
     expect(result.model).toBe("stub-model");
@@ -59,7 +63,11 @@ describe("generateEpisode", () => {
       ...PAPER,
       sections: [{ heading: "Body", content: "x".repeat(500) }],
     };
-    const result = await generateEpisode(big, { provider, maxInputChars: 100 });
+    const result = await generateEpisode(big, {
+      provider,
+      maxInputChars: 100,
+      maxContinuations: 0,
+    });
     expect(result.truncatedInput).toBe(true);
     expect(provider.last?.user).toContain("truncated");
   });
@@ -68,21 +76,25 @@ describe("generateEpisode", () => {
 describe("speaker and show-name guardrails", () => {
   it("pins the show name so the model cannot invent one", async () => {
     const provider = new StubProvider();
-    await generateEpisode(PAPER, { provider });
+    await generateEpisode(PAPER, { provider, maxContinuations: 0 });
     expect(provider.last?.system).toContain("PaperCast");
     expect(provider.last?.system).toMatch(/never invent a different show name/i);
   });
 
   it("accepts a custom show name", async () => {
     const provider = new StubProvider();
-    await generateEpisode(PAPER, { provider, showName: "Lab Notes" });
+    await generateEpisode(PAPER, {
+      provider,
+      showName: "Lab Notes",
+      maxContinuations: 0,
+    });
     expect(provider.last?.system).toContain("Lab Notes");
     expect(provider.last?.system).not.toContain("PaperCast");
   });
 
   it("gives the speakers no names at all", async () => {
     const provider = new StubProvider();
-    await generateEpisode(PAPER, { provider });
+    await generateEpisode(PAPER, { provider, maxContinuations: 0 });
     const sys = provider.last!.system;
     // Earlier versions injected invented personas ("Alex", "Dr. Rivera").
     expect(sys).not.toMatch(/\bAlex\b/);
@@ -93,7 +105,7 @@ describe("speaker and show-name guardrails", () => {
 
   it("forbids fabricated credentials and author impersonation", async () => {
     const provider = new StubProvider();
-    await generateEpisode(PAPER, { provider });
+    await generateEpisode(PAPER, { provider, maxContinuations: 0 });
     const sys = provider.last!.system;
     expect(sys).toMatch(/neither speaker wrote the paper/i);
     expect(sys).toMatch(/no credentials|no credentials, degrees/i);
@@ -104,7 +116,7 @@ describe("speaker and show-name guardrails", () => {
 describe("the solo format", () => {
   it("asks for one narrated voice and forbids the other two", async () => {
     const provider = new StubProvider();
-    await generateEpisode(PAPER, { provider, format: "solo" });
+    await generateEpisode(PAPER, { provider, format: "solo", maxContinuations: 0 });
     const sys = provider.last!.system;
     expect(sys).toMatch(/EVERY turn has the speaker "narrator"/);
     expect(sys).toMatch(/no turn may use "host" or "guest"/i);
@@ -114,8 +126,8 @@ describe("the solo format", () => {
     // The point of the solo format is a second voice, not a second standard.
     const dialogue = new StubProvider();
     const solo = new StubProvider();
-    await generateEpisode(PAPER, { provider: dialogue });
-    await generateEpisode(PAPER, { provider: solo, format: "solo" });
+    await generateEpisode(PAPER, { provider: dialogue, maxContinuations: 0 });
+    await generateEpisode(PAPER, { provider: solo, format: "solo", maxContinuations: 0 });
     const block = (s: string) =>
       s.slice(s.indexOf("FAITHFULNESS"), s.indexOf("\n\n", s.indexOf("FAITHFULNESS")));
     expect(block(solo.last!.system)).toBe(block(dialogue.last!.system));
@@ -123,7 +135,7 @@ describe("the solo format", () => {
 
   it("carries the anti-fabrication rules over to a single speaker", async () => {
     const provider = new StubProvider();
-    await generateEpisode(PAPER, { provider, format: "solo" });
+    await generateEpisode(PAPER, { provider, format: "solo", maxContinuations: 0 });
     const sys = provider.last!.system;
     expect(sys).toMatch(/the speaker has no name/i);
     expect(sys).toMatch(/the speaker did not write the paper/i);
@@ -133,7 +145,7 @@ describe("the solo format", () => {
 
   it("bans bracketed stage directions, which a synthesizer reads aloud", async () => {
     const provider = new StubProvider();
-    await generateEpisode(PAPER, { provider, format: "solo" });
+    await generateEpisode(PAPER, { provider, format: "solo", maxContinuations: 0 });
     const sys = provider.last!.system;
     expect(sys).toMatch(/no \[pause\]/i);
     expect(sys).toMatch(/reads such marks aloud/i);
@@ -141,7 +153,7 @@ describe("the solo format", () => {
 
   it("opens warmly before it opens technically", async () => {
     const provider = new StubProvider();
-    await generateEpisode(PAPER, { provider, format: "solo" });
+    await generateEpisode(PAPER, { provider, format: "solo", maxContinuations: 0 });
     const sys = provider.last!.system;
     expect(sys).toContain("THE WELCOME");
     expect(sys).toMatch(/greet the listener warmly/i);
@@ -158,7 +170,7 @@ describe("the solo format", () => {
 
   it("gives the talk a narrative arc the dialogue does not need", async () => {
     const provider = new StubProvider();
-    await generateEpisode(PAPER, { provider, format: "solo" });
+    await generateEpisode(PAPER, { provider, format: "solo", maxContinuations: 0 });
     const sys = provider.last!.system;
     for (const beat of [
       "THE WELCOME",
@@ -175,7 +187,7 @@ describe("the solo format", () => {
 
   it("leaves the dialogue prompt untouched", async () => {
     const provider = new StubProvider();
-    await generateEpisode(PAPER, { provider });
+    await generateEpisode(PAPER, { provider, maxContinuations: 0 });
     const sys = provider.last!.system;
     expect(sys).toContain("two-host dialogue");
     expect(sys).not.toContain("narrator");
@@ -187,8 +199,8 @@ describe("the explain-like-I'm-5 format", () => {
   it("keeps every faithfulness rule the dialogue has", async () => {
     const dialogue = new StubProvider();
     const eli5 = new StubProvider();
-    await generateEpisode(PAPER, { provider: dialogue });
-    await generateEpisode(PAPER, { provider: eli5, format: "eli5" });
+    await generateEpisode(PAPER, { provider: dialogue, maxContinuations: 0 });
+    await generateEpisode(PAPER, { provider: eli5, format: "eli5", maxContinuations: 0 });
     const block = (s: string) =>
       s.slice(s.indexOf("FAITHFULNESS"), s.indexOf("\n\n", s.indexOf("FAITHFULNESS")));
     expect(block(eli5.last!.system)).toBe(block(dialogue.last!.system));
@@ -198,7 +210,7 @@ describe("the explain-like-I'm-5 format", () => {
     // An analogy stated as fact is a claim the paper never made; stated as a
     // comparison it stays framing, which the judge excludes from hallucination.
     const provider = new StubProvider();
-    await generateEpisode(PAPER, { provider, format: "eli5" });
+    await generateEpisode(PAPER, { provider, format: "eli5", maxContinuations: 0 });
     const sys = provider.last!.system;
     expect(sys).toMatch(/always mark a comparison as a comparison/i);
     expect(sys).toMatch(
@@ -208,7 +220,7 @@ describe("the explain-like-I'm-5 format", () => {
 
   it("bans invented proper nouns, which the proper-noun check would fail", async () => {
     const provider = new StubProvider();
-    await generateEpisode(PAPER, { provider, format: "eli5" });
+    await generateEpisode(PAPER, { provider, format: "eli5", maxContinuations: 0 });
     expect(provider.last!.system).toMatch(
       /no brand names, product names, company names/i,
     );
@@ -216,7 +228,7 @@ describe("the explain-like-I'm-5 format", () => {
 
   it("refuses to round a real number into a different one", async () => {
     const provider = new StubProvider();
-    await generateEpisode(PAPER, { provider, format: "eli5" });
+    await generateEpisode(PAPER, { provider, format: "eli5", maxContinuations: 0 });
     expect(provider.last!.system).toMatch(
       /never round a real number into a different one/i,
     );
@@ -225,13 +237,13 @@ describe("the explain-like-I'm-5 format", () => {
   it("keeps the summary and key points plain rather than simplified", async () => {
     // They are what the eval and the interface read.
     const provider = new StubProvider();
-    await generateEpisode(PAPER, { provider, format: "eli5" });
+    await generateEpisode(PAPER, { provider, format: "eli5", maxContinuations: 0 });
     expect(provider.last!.system).toMatch(/these two stay plain, accurate and grown-up/i);
   });
 
   it("bans the bracketed cues the format invites", async () => {
     const provider = new StubProvider();
-    await generateEpisode(PAPER, { provider, format: "eli5" });
+    await generateEpisode(PAPER, { provider, format: "eli5", maxContinuations: 0 });
     const sys = provider.last!.system;
     expect(sys).toMatch(/no \[smiles\]/i);
     expect(sys).toMatch(/reads such marks aloud/i);
@@ -239,7 +251,7 @@ describe("the explain-like-I'm-5 format", () => {
 
   it("uses the four story beats and narrates throughout", async () => {
     const provider = new StubProvider();
-    await generateEpisode(PAPER, { provider, format: "eli5" });
+    await generateEpisode(PAPER, { provider, format: "eli5", maxContinuations: 0 });
     const sys = provider.last!.system;
     for (const beat of [
       "THE BIG WONDER",
@@ -269,10 +281,12 @@ describe("targetTurnCount", () => {
 
   it("states the turn floor and word target in the prompt", async () => {
     const provider = new StubProvider();
-    await generateEpisode(PAPER, { provider, minutes: 4 });
+    await generateEpisode(PAPER, { provider, minutes: 4, maxContinuations: 0 });
     const sys = provider.last!.system;
     expect(sys).toContain("at least 14 turns");
-    expect(sys).toContain("600 words");
+    // Format-aware now: four minutes of dialogue is 4,400 characters of
+    // speech, which at 6.8 characters a word is 647 of them.
+    expect(sys).toContain("647 words");
   });
 });
 
