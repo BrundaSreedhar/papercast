@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { pageAt, parsePaperStructure, paperToText, type PaperSource } from "./extract";
+import {
+  joinTextItems,
+  pageAt,
+  parsePaperStructure,
+  paperToText,
+  type PaperSource,
+} from "./extract";
 
 // A realistic flattened-PDF fixture: title, authors, abstract, numbered
 // sections, figure/table noise, references, acknowledgments, appendix.
@@ -310,5 +316,160 @@ describe("titles beside a byline", () => {
   it("stops at a footnote marker hanging off a name", () => {
     const doc = ["Some Paper Title Here", "Jane Doe∗", "", "Abstract", "x."].join("\n");
     expect(parsePaperStructure(doc).title).toBe("Some Paper Title Here");
+  });
+});
+
+/*
+ * Every line below is a real one that extraction once mistook for a heading,
+ * from the papers in the library. Each produced a fake section: a citation
+ * labelled with a table header, a section split into sixteen pieces called
+ * "model", or a bibliography leaking back in as paper.
+ */
+describe("what is not a heading", () => {
+  const headings = (doc: string) =>
+    parsePaperStructure(doc).sections.map((s) => s.heading);
+
+  const NUMBERED = (middle: string[]) =>
+    [
+      "A Paper About Attention",
+      "",
+      "1 Introduction",
+      "Recurrent models are slow because they compute one step after another.",
+      "",
+      "2 Model",
+      "The model has an encoder and a decoder with attention between them.",
+      ...middle,
+      "It keeps going with more ordinary prose about the architecture here.",
+      "",
+      "3 Results",
+      "The model reaches a new state of the art on two translation tasks.",
+    ].join("\n");
+
+  it("keeps a subscript on its own line inside its section", () => {
+    // d_model, which pdf-parse splits into "d" and "model" on separate lines.
+    const doc = NUMBERED([
+      "Each layer has dimension d",
+      "model",
+      "= 512 in every sub-layer.",
+    ]);
+    expect(headings(doc)).toEqual(["1 Introduction", "2 Model", "3 Results"]);
+  });
+
+  it("does not take a table header or a table row for a heading", () => {
+    const doc = NUMBERED([
+      "Model",
+      "BLEUTraining Cost (FLOPs)",
+      "EN-DEEN-FREN-DEEN-FR",
+      "ByteNet [18]23.75",
+      "10 GB 107,000 2,400",
+    ]);
+    expect(headings(doc)).toEqual(["1 Introduction", "2 Model", "3 Results"]);
+  });
+
+  it("does not take a diagram label or an argument label for a heading", () => {
+    const doc = NUMBERED(["ASYNC", "AZ 3", "PEER TO PEER GOSSIP", "AV2", "LOC"]);
+    expect(headings(doc)).toEqual(["1 Introduction", "2 Model", "3 Results"]);
+  });
+
+  it("does not take a numbered list item for a heading", () => {
+    const doc = NUMBERED([
+      "1. Each database-level transaction is broken up into",
+      "multiple mini-transactions that are ordered.",
+      "2. Exercise Generation: Produces customized teaching",
+      "materials like lab exercises and quizzes.",
+    ]);
+    expect(headings(doc)).toEqual(["1 Introduction", "2 Model", "3 Results"]);
+  });
+
+  it("does not take a year, a page number or a caption number for a section", () => {
+    const doc = NUMBERED([
+      "2015. We begin with a summary of results running industry",
+      "34. Right: a bottleneck building block for ResNet-50",
+    ]);
+    expect(headings(doc)).toEqual(["1 Introduction", "2 Model", "3 Results"]);
+  });
+
+  it("keeps a real heading with a colon in it", () => {
+    const doc = NUMBERED([
+      "",
+      "2.1 Solution sketch: Asynchronous Processing",
+      "We now describe it.",
+    ]);
+    expect(headings(doc)).toContain("2.1 Solution sketch: Asynchronous Processing");
+  });
+
+  it("drops everything after the bibliography starts, not just its first part", () => {
+    const doc = [
+      NUMBERED([]),
+      "",
+      "References",
+      "[1] A. Author. A paper. 2023.",
+      "2025. Accessed: 2025-05-09",
+      "[2] B. Author. Another paper that runs on. 2024.",
+      "",
+      "A. Appendix Material",
+      "Twenty more equations nobody asked for, in considerable detail here.",
+    ].join("\n");
+    expect(headings(doc)).toEqual(["1 Introduction", "2 Model", "3 Results"]);
+  });
+
+  it("reads a paper that titles its sections in words, and treats its numbers as lists", () => {
+    const doc = [
+      "A Framework for Educators",
+      "",
+      "Introduction",
+      "Large language models have shown immense potential in many settings today.",
+      "Our contributions are threefold.",
+      "1. A Holistic, Teacher-Centric Workflow: While RAG is",
+      "a common technique in student-facing tools, ours is for teachers.",
+      "2. Architectural Adaptations for Small Model Efficacy",
+      "We introduce two architectural components specifically for small models.",
+      "",
+      "Experimental Setup",
+      "We evaluate the framework on three tasks with a panel of teachers here.",
+      "Model",
+      "Accuracy",
+      "Clarity &",
+      "Fluency",
+      "",
+      "Conclusion",
+      "We introduced a framework for educator-centric content creation today.",
+    ].join("\n");
+    expect(headings(doc)).toEqual(["Introduction", "Experimental Setup", "Conclusion"]);
+  });
+});
+
+describe("joinTextItems", () => {
+  // A 10pt font: transform [10, 0, 0, 10, x, y]; width in the same units as x.
+  const item = (str: string, x: number, width: number, y = 700) => ({
+    str,
+    transform: [10, 0, 0, 10, x, y],
+    width,
+  });
+
+  it("puts back a word break pdf.js left out", () => {
+    // "by more than" ends at x=160; "2.0 BLEU" starts 2.5pt later (0.25 em).
+    expect(
+      joinTextItems([item("by more than", 100, 60), item("2.0 BLEU", 162.5, 40)]),
+    ).toBe("by more than 2.0 BLEU");
+  });
+
+  it("does not split a word whose fragments touch", () => {
+    // Kerning leaves fragments of one word a hair apart (0.02 em).
+    expect(joinTextItems([item("Trans", 100, 25), item("former", 125.2, 30)])).toBe(
+      "Transformer",
+    );
+  });
+
+  it("does not double a space that is already there", () => {
+    expect(joinTextItems([item("by more ", 100, 40), item("than", 150, 20)])).toBe(
+      "by more than",
+    );
+  });
+
+  it("starts a new line when the baseline moves", () => {
+    expect(
+      joinTextItems([item("first line", 100, 50, 700), item("second", 100, 30, 688)]),
+    ).toBe("first line\nsecond");
   });
 });

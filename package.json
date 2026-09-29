@@ -20,6 +20,7 @@
     "start": "next start",
     "learn": "tsx src/learn.ts",
     "concepts": "tsx src/concepts.ts",
+    "reparse": "tsx src/reparse.ts",
     "demo:papers": "node scripts/fetch-demo-papers.mjs"
   },
   "dependencies": {
