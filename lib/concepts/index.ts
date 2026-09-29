@@ -1,9 +1,15 @@
 /**
- * The ideas an episode is about, and which episodes share them.
+ * The ideas an episode is about, and which papers share them.
  *
- * Extraction is lexical and local — no model call, no key — for the same reason
- * citations are: a map of what you have listened to should exist for every
- * episode on every provider, not only the ones that paid for an extra pass.
+ * The primary source of concepts is now a model: `./extract` asks the provider
+ * that wrote the episode to name the paper's key concepts, and keeps only the
+ * ones it can find in the paper. Lexical extraction could never name the
+ * Transformer in "Attention Is All You Need" — the word is in every sentence
+ * and in no key point — and a map missing the one idea the paper is about is
+ * not worth drawing.
+ *
+ * What follows is the lexical fallback, used for an episode whose extraction
+ * failed or that was made before it existed. It needs no model and no key.
  *
  * The method is deliberately narrow. Candidate terms are the noun-ish phrases
  * that appear in the episode's key points, which are already the model's
@@ -12,17 +18,28 @@
  * words from the presenter's framing: "an interesting approach" survives the
  * first filter and not the second.
  *
- * Scoring rewards a term for being frequent in this paper and rare across the
- * rest of the library, which is what makes it *this* episode's concept rather
- * than a word every paper in the field uses. With one episode on the shelf that
- * second half has nothing to say, so it degrades to frequency — the map is
- * thinner early on and sharpens as the library grows, rather than being wrong.
+ * Scoring is frequency within this episode, boosted for longer phrases and for
+ * terms the paper gives a section heading. It does not look across the library:
+ * generic words are kept out by the stoplists below, not by rarity.
  */
 import type { EpisodeSummary } from "../library/types";
+import { normalizeTitle } from "../pdf/references";
+import type { RelationType } from "./relations";
 
 export interface Concept {
-  /** The term as it reads, e.g. "attention mechanism". */
+  /** The term as it reads, e.g. "attention mechanism". Lowercase; the merge key. */
   term: string;
+  /** How to display it, when casing matters: "Transformer", "BERT". */
+  label?: string;
+  /**
+   * Other names for exactly this idea — an acronym, a spelled-out form.
+   *
+   * Two papers that call one idea by different names should meet on the map,
+   * and a shared string is the only thing the map joins on.
+   */
+  aliases?: string[];
+  /** A one-sentence definition, when a model supplied one. */
+  definition?: string;
   /** How strongly this episode is about it, 0–1 within the episode. */
   weight: number;
   /**
@@ -38,8 +55,17 @@ export interface Concept {
 
 export interface ConceptNode {
   term: string;
+  label: string;
+  definition?: string;
   /** Episode ids that cover it, strongest first. */
   episodes: string[];
+  /**
+   * Distinct papers that cover it.
+   *
+   * What "shared" means. Two episodes of the same paper always overlap, and
+   * counting them as a connection drew a paper linked to itself.
+   */
+  papers: string[];
   /** Sum of the term's weight across those episodes. */
   weight: number;
 }
@@ -50,11 +76,36 @@ export interface ConceptEdge {
   b: string;
   /** Episodes in which both appear. */
   episodes: string[];
+  /** Distinct papers in which both appear. */
+  papers: string[];
+}
+
+/** A typed relation as an episode states it, between two of its concepts. */
+export interface ConceptRelationInput {
+  source: string;
+  target: string;
+  type: RelationType;
+  explanation: string;
+  evidence: { text: string; page?: number; heading?: string };
+}
+
+/**
+ * A typed relation on the map, read as "source <type> target".
+ *
+ * Unlike an edge, which says only that two ideas came up together, this says
+ * how they connect, why, and where the paper says so.
+ */
+export interface ConceptRelation extends ConceptRelationInput {
+  /** Episodes that state it. The explanation and quote are the first one's. */
+  episodes: string[];
+  /** Distinct papers that state it. */
+  papers: string[];
 }
 
 export interface ConceptMap {
   concepts: ConceptNode[];
   edges: ConceptEdge[];
+  relations: ConceptRelation[];
   /** Concepts per episode, for colouring and for the per-episode view. */
   byEpisode: Record<string, Concept[]>;
 }
@@ -231,9 +282,18 @@ export function acronymExpansions(paperText: string): Map<string, string> {
     const acronym = m[2]!;
     const base = acronym.replace(/s$/, "");
     const words = m[1]!.trim().split(/\s+/);
-    const take = words.slice(-base.length);
-    if (take.length !== base.length) continue;
-    if (take.map((w) => w[0]!.toLowerCase()).join("") !== base.toLowerCase()) continue;
+
+    // A hyphenated word carries one initial per part: "Retrieval-Augmented
+    // Generation" is RAG, not RG. So words are taken from the end until their
+    // parts account for every letter of the acronym.
+    const take: string[] = [];
+    let initials = "";
+    for (let i = words.length - 1; i >= 0 && initials.length < base.length; i--) {
+      const parts = words[i]!.split("-").filter(Boolean);
+      take.unshift(words[i]!);
+      initials = parts.map((w) => w[0]!.toLowerCase()).join("") + initials;
+    }
+    if (initials !== base.toLowerCase()) continue;
 
     const expansion = take.join(" ").toLowerCase();
     const key = base.toLowerCase();
@@ -380,6 +440,89 @@ export function conceptsFor(
 }
 
 /**
+ * The key two names of one idea should share.
+ *
+ * Case, a leading "the", hyphenation and a plural ending are how the same idea
+ * gets spelt differently from paper to paper — "Self-Attention", "self
+ * attention", "the Transformer", "transformers" — and none of them make it a
+ * different idea.
+ */
+export function conceptKey(name: string): string {
+  const words = name
+    .toLowerCase()
+    .replace(/[-‐–]/g, " ")
+    .replace(/[“”"'’().,;:]/g, "")
+    .trim()
+    .replace(/^the\s+/, "")
+    .split(/\s+/)
+    .filter(Boolean);
+  if (words.length === 0) return "";
+  const last = words[words.length - 1]!;
+  if (last.length > 4 && last.endsWith("ies")) {
+    words[words.length - 1] = `${last.slice(0, -3)}y`;
+  } else if (last.length > 3 && last.endsWith("s") && !/(ss|us|is)$/.test(last)) {
+    words[words.length - 1] = last.slice(0, -1);
+  }
+  return words.join(" ");
+}
+
+/** What counts as the same paper: its title, not the episode made from it. */
+export function paperKeyOf(episode: Pick<EpisodeSummary, "paperTitle" | "id">): string {
+  return normalizeTitle(episode.paperTitle) || episode.id;
+}
+
+/**
+ * One name per idea across the whole library.
+ *
+ * Each concept is joined to its aliases, and any two concepts that share a name
+ * or an alias become one. The surviving name is the one most concepts were
+ * actually called, so a paper that only ever says "LLM" meets one that says
+ * "large language model" under the name more of them used.
+ */
+function canonicalNames(concepts: Concept[]): Map<string, string> {
+  const parent = new Map<string, string>();
+  const find = (k: string): string => {
+    let root = k;
+    while (parent.get(root) !== root) root = parent.get(root)!;
+    parent.set(k, root);
+    return root;
+  };
+  const add = (k: string) => {
+    if (!parent.has(k)) parent.set(k, k);
+  };
+
+  const primaryCount = new Map<string, number>();
+  for (const c of concepts) {
+    const primary = conceptKey(c.term);
+    if (!primary) continue;
+    add(primary);
+    primaryCount.set(primary, (primaryCount.get(primary) ?? 0) + 1);
+    for (const alias of c.aliases ?? []) {
+      const k = conceptKey(alias);
+      // Two letters is the shortest acronym worth trusting ("RL"); one is noise.
+      if (k.length < 2 || k === primary) continue;
+      add(k);
+      parent.set(find(k), find(primary));
+    }
+  }
+
+  // Name each group after its most-used primary name, longest on a tie.
+  const best = new Map<string, string>();
+  for (const [k, count] of primaryCount) {
+    const root = find(k);
+    const current = best.get(root);
+    const currentCount = current ? primaryCount.get(current)! : -1;
+    if (count > currentCount || (count === currentCount && k.length > current!.length)) {
+      best.set(root, k);
+    }
+  }
+
+  const out = new Map<string, string>();
+  for (const k of parent.keys()) out.set(k, best.get(find(k)) ?? k);
+  return out;
+}
+
+/**
  * Build the map across a whole library.
  *
  * Two concepts are linked when an episode covers both, and the link records
@@ -387,43 +530,115 @@ export function conceptsFor(
  * list rather than a line.
  */
 export function buildConceptMap(
-  episodes: (EpisodeSummary & { concepts: Concept[] })[],
+  episodes: (EpisodeSummary & {
+    concepts: Concept[];
+    relations?: ConceptRelationInput[];
+  })[],
 ): ConceptMap {
   const nodes = new Map<string, ConceptNode>();
   const edges = new Map<string, ConceptEdge>();
+  const relations = new Map<string, ConceptRelation>();
   const byEpisode: Record<string, Concept[]> = {};
+  const canonical = canonicalNames(episodes.flatMap((e) => e.concepts));
 
   for (const episode of episodes) {
-    byEpisode[episode.id] = episode.concepts;
+    const paper = paperKeyOf(episode);
 
-    for (const { term, weight } of episode.concepts) {
-      const node = nodes.get(term) ?? { term, episodes: [], weight: 0 };
+    // Renamed to the library-wide name, and merged where two of this episode's
+    // concepts turned out to be one idea.
+    const merged = new Map<string, Concept>();
+    for (const c of episode.concepts) {
+      const key = conceptKey(c.term);
+      if (!key) continue;
+      const term = canonical.get(key) ?? key;
+      const seen = merged.get(term);
+      if (!seen || c.weight > seen.weight) {
+        const display = c.label ?? c.term;
+        merged.set(term, {
+          ...c,
+          term,
+          // A label only survives if it spells the canonical name.
+          label: conceptKey(display) === term ? display : seen?.label,
+        });
+      }
+    }
+    const concepts = [...merged.values()];
+    byEpisode[episode.id] = concepts;
+
+    for (const { term, label, definition, weight } of concepts) {
+      const node = nodes.get(term) ?? {
+        term,
+        label: label ?? term,
+        episodes: [],
+        papers: [],
+        weight: 0,
+      };
       node.episodes.push(episode.id);
+      if (!node.papers.includes(paper)) node.papers.push(paper);
       node.weight += weight;
+      if (label && node.label === term) node.label = label;
+      if (definition && !node.definition) node.definition = definition;
       nodes.set(term, node);
     }
 
-    const terms = episode.concepts.map((c) => c.term).sort();
+    const terms = concepts.map((c) => c.term).sort();
     for (let i = 0; i < terms.length; i++) {
       for (let j = i + 1; j < terms.length; j++) {
         const key = `${terms[i]} ${terms[j]}`;
-        const edge = edges.get(key) ?? { a: terms[i]!, b: terms[j]!, episodes: [] };
+        const edge = edges.get(key) ?? {
+          a: terms[i]!,
+          b: terms[j]!,
+          episodes: [],
+          papers: [],
+        };
         edge.episodes.push(episode.id);
+        if (!edge.papers.includes(paper)) edge.papers.push(paper);
         edges.set(key, edge);
       }
+    }
+
+    // Relations take the same library-wide names as the concepts they join,
+    // so one stated by two papers under different spellings is one relation.
+    const here = new Set(terms);
+    const rename = (name: string) => {
+      const key = conceptKey(name);
+      return canonical.get(key) ?? key;
+    };
+    for (const r of episode.relations ?? []) {
+      const source = rename(r.source);
+      const target = rename(r.target);
+      if (source === target || !here.has(source) || !here.has(target)) continue;
+      const key =
+        r.type === "contrasts-with"
+          ? `${r.type}|${[source, target].sort().join("|")}`
+          : `${source}|${r.type}|${target}`;
+      const relation = relations.get(key) ?? {
+        ...r,
+        source,
+        target,
+        episodes: [],
+        papers: [],
+      };
+      if (!relation.episodes.includes(episode.id)) relation.episodes.push(episode.id);
+      if (!relation.papers.includes(paper)) relation.papers.push(paper);
+      relations.set(key, relation);
     }
   }
 
   return {
     concepts: [...nodes.values()].sort(
-      (a, b) => b.episodes.length - a.episodes.length || b.weight - a.weight,
+      (a, b) =>
+        b.papers.length - a.papers.length ||
+        b.episodes.length - a.episodes.length ||
+        b.weight - a.weight,
     ),
     edges: [...edges.values()],
+    relations: [...relations.values()],
     byEpisode,
   };
 }
 
-/** Concepts covered by more than one episode — where the library connects. */
+/** Concepts covered by more than one paper — where the library connects. */
 export function sharedConcepts(map: ConceptMap): ConceptNode[] {
-  return map.concepts.filter((c) => c.episodes.length > 1);
+  return map.concepts.filter((c) => c.papers.length > 1);
 }

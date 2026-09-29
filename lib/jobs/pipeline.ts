@@ -32,6 +32,7 @@ import { estimateCost } from "../eval/report";
 import { toJobError } from "./errors";
 import { refineEpisode } from "../refine/index";
 import { groundTurns } from "../ground/index";
+import { extractConcepts } from "../concepts/extract";
 import { saveEpisode } from "../library/store";
 import type { EpisodeRecord } from "../library/types";
 import type { EpisodeFormat } from "../llm/generateEpisode";
@@ -134,6 +135,26 @@ function ground(
     return groundTurns(episode, paper);
   } catch (err) {
     console.warn("[job] could not anchor turns to the paper:", err);
+    return undefined;
+  }
+}
+
+/**
+ * Name the paper's key concepts for the concept map, or return nothing.
+ *
+ * A model call, so it can fail the way review can; an episode that was produced
+ * must not be lost to it. Without stored concepts the map falls back to the
+ * lexical ones for this episode.
+ */
+async function mapConcepts(
+  jobId: string,
+  paper: Parameters<typeof extractConcepts>[0],
+  provider?: ProviderName,
+) {
+  try {
+    return await extractConcepts(paper, provider ? getProvider(provider) : getProvider());
+  } catch (err) {
+    console.warn(`[job ${jobId}] could not extract concepts:`, err);
     return undefined;
   }
 }
@@ -339,6 +360,9 @@ async function runJobStages(
       [TA.PAPERCAST_UNCITED_TURNS]: episode.turns.length - (citations?.length ?? 0),
     });
 
+    const concepts = await mapConcepts(jobId, paper, input.provider);
+    if (concepts) llmUsage = addUsage(llmUsage, concepts.usage);
+
     if (!input.audioPath) {
       await shelve({
         id: jobId,
@@ -360,6 +384,8 @@ async function runJobStages(
         episode,
         citations,
         paper,
+        concepts: concepts?.concepts,
+        relations: concepts?.relations,
       });
       await update({
         stage: "done",
@@ -478,6 +504,8 @@ async function runJobStages(
       citations,
       timings: audio.timings,
       paper,
+      concepts: concepts?.concepts,
+      relations: concepts?.relations,
     });
 
     await update({

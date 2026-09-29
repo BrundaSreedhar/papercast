@@ -19,6 +19,7 @@
     "build:web": "next build",
     "start": "next start",
     "learn": "tsx src/learn.ts",
+    "concepts": "tsx src/concepts.ts",
     "demo:papers": "node scripts/fetch-demo-papers.mjs"
   },
   "dependencies": {

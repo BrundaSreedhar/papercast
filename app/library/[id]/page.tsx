@@ -16,10 +16,26 @@ export const dynamic = "force-dynamic";
  * own — the job that produced it is long gone from memory, and the recording is
  * not.
  */
-export default async function Episode({ params }: { params: Promise<{ id: string }> }) {
+export default async function Episode({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ turn?: string }>;
+}) {
   const { id } = await params;
   const record = await getEpisode(id).catch(() => undefined);
   if (!record) notFound();
+
+  // `?turn=N` opens the episode at a moment — where the concept map links to
+  // the place an idea is spoken about. Ignored unless it names a real turn.
+  const requested = Number((await searchParams).turn);
+  const startTurn =
+    Number.isInteger(requested) &&
+    requested >= 0 &&
+    requested < record.episode.turns.length
+      ? requested
+      : undefined;
 
   return (
     <main className="wrap">
@@ -51,16 +67,11 @@ export default async function Episode({ params }: { params: Promise<{ id: string
         /*
          * Closed by default, and a plain <details> rather than a component with
          * state: it needs no JavaScript, it is keyboard operable for free, and
-         * this page is rendered on the server. The trigger says how much is
-         * behind it so opening it is a decision rather than a surprise.
+         * this page is rendered on the server.
          */
         <details className="card summary">
           <summary>
             <span className="summary-label">What this episode covers</span>
-            <span className="summary-hint">
-              {record.summary.split(/\s+/).length} words
-              {record.keyPoints?.length ? ` · ${record.keyPoints.length} key points` : ""}
-            </span>
           </summary>
           <p>{record.summary}</p>
           {record.keyPoints?.length > 0 && (
@@ -80,6 +91,7 @@ export default async function Episode({ params }: { params: Promise<{ id: string
           timings={record.timings ?? []}
           citations={record.citations ?? []}
           episodeId={record.id}
+          startTurn={startTurn}
         />
       ) : (
         <section className="card" style={{ marginTop: "1.5rem" }}>
@@ -93,7 +105,12 @@ export default async function Episode({ params }: { params: Promise<{ id: string
             {record.episode.turns.map((turn, i) => {
               const cite = record.citations?.find((c) => c.turnIndex === i);
               return (
-                <div key={i} className="turn" data-speaker={turn.speaker}>
+                <div
+                  key={i}
+                  id={`turn-${i}`}
+                  className={i === startTurn ? "turn linked" : "turn"}
+                  data-speaker={turn.speaker}
+                >
                   <span className="who">{turn.speaker}</span>
                   <p>{turn.text}</p>
                   {cite && (

@@ -15,6 +15,14 @@
   --accent: #1f6f5c;
   --active-bg: #f1f7f4;
   --error: #a3341f;
+  /* One colour per paper on the concept map; the accent is kept for ideas
+     that bridge papers, so none of these is close to it. */
+  --paper-1: #d0613f;
+  --paper-2: #6a5ae0;
+  --paper-3: #c28a12;
+  --paper-4: #2c7fbd;
+  --paper-5: #bf4a88;
+  --paper-6: #6f8a1f;
   --radius: 10px;
 }
 
@@ -38,6 +46,12 @@
     --accent: #5fbfa3;
     --active-bg: #172723;
     --error: #e08a76;
+    --paper-1: #f08b6c;
+    --paper-2: #a399ff;
+    --paper-3: #f0c250;
+    --paper-4: #66b5ec;
+    --paper-5: #ec82b8;
+    --paper-6: #bcd66a;
   }
 }
 
@@ -53,6 +67,12 @@
   --accent: #5fbfa3;
   --active-bg: #172723;
   --error: #e08a76;
+  --paper-1: #f08b6c;
+  --paper-2: #a399ff;
+  --paper-3: #f0c250;
+  --paper-4: #66b5ec;
+  --paper-5: #ec82b8;
+  --paper-6: #bcd66a;
 }
 
 * {
@@ -869,10 +889,7 @@ audio {
   letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--ink);
-}
-.summary-hint {
-  font-size: 0.8rem;
-  color: var(--faint);
+  /* Pushes the chevron to the far edge. */
   margin-right: auto;
 }
 /* The chevron is the affordance, so it turns rather than swapping glyph. */
@@ -1049,56 +1066,6 @@ audio {
 }
 
 /* ── the concept map ─────────────────────────────────────────────────── */
-
-.graph {
-  margin-top: 1.5rem;
-}
-.graph-svg {
-  width: 100%;
-  max-width: 40rem;
-  margin: 0 auto;
-  display: block;
-  overflow: visible;
-  font-family: ui-sans-serif, system-ui, sans-serif;
-}
-
-.edge {
-  stroke: var(--line);
-  opacity: 0.5;
-  transition:
-    opacity 0.15s,
-    stroke 0.15s;
-}
-.edge.lit {
-  opacity: 0.85;
-}
-.node {
-  cursor: pointer;
-  transition: opacity 0.15s;
-}
-.node.dimmed {
-  opacity: 0.22;
-}
-.dot {
-  fill: var(--surface);
-  stroke: var(--faint);
-  stroke-width: 1.5;
-}
-.dot.shared {
-  fill: var(--accent);
-  stroke: var(--accent);
-}
-.label {
-  font-size: 11px;
-  fill: var(--muted);
-}
-.label.shared {
-  fill: var(--ink);
-  font-weight: 600;
-}
-.node:hover .label {
-  fill: var(--ink);
-}
 
 .graph-detail {
   position: sticky;
@@ -1280,13 +1247,6 @@ audio {
   text-decoration: underline;
   text-underline-offset: 2px;
 }
-/* A pinned node keeps its ring, so it is obvious which one the panel describes. */
-.node .dot {
-  transition: stroke-width 0.15s;
-}
-.node:hover .dot {
-  stroke-width: 3;
-}
 
 /* The list is the same information as the map, so a pinned idea is marked in
    both rather than only where the pointer happens to be. */
@@ -1295,13 +1255,421 @@ audio {
   border-radius: var(--radius);
   padding: 0.5rem 0.6rem;
 }
-/* A dashed edge is a weaker claim than a solid one: two ideas that read as the
-   same thing, rather than two an episode actually covered together. */
+
+.graph-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.76rem;
+  color: var(--muted);
+}
+.graph-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+/*
+ * The panel is sticky, so an idea with many relations would otherwise grow it
+ * over the very graph it describes. It scrolls instead.
+ */
+.graph-detail {
+  max-height: 30vh;
+  overflow-y: auto;
+}
+
+/* The turn a concept-map link opened the episode at. */
+.turn.linked {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.turn {
+  scroll-margin-top: 30vh;
+}
+
+.card-label {
+  margin-top: 0.4rem;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.graph-detail .card-label {
+  color: var(--faint);
+}
+.moments {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.graph-detail a.moment,
+.concept-episodes a.moment {
+  margin-right: 0.4rem;
+  text-decoration: none;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.graph-detail .snippet {
+  color: var(--faint);
+}
+.relation-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  text-align: left;
+  color: var(--ink);
+  cursor: pointer;
+}
+.relation-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.relation-quote {
+  margin: 0.2rem 0 0;
+  padding-left: 0.6rem;
+  border-left: 2px solid var(--line);
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.relation-where {
+  color: var(--faint);
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+.chip {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.1rem 0.55rem;
+  background: none;
+  font: inherit;
+  font-size: 0.78rem;
+  color: var(--ink);
+  cursor: pointer;
+}
+.chip.shared {
+  border-color: var(--accent);
+}
+.chip:hover {
+  background: var(--active-bg);
+}
+
+.graph-relations {
+  list-style: none;
+  margin: 0.25rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.graph-relations li {
+  display: flex;
+  flex-direction: column;
+}
+.graph-detail .relation-head {
+  color: var(--ink);
+}
+.relation-head em,
+.graph-detail strong em {
+  font-style: normal;
+  font-weight: 600;
+}
+
+/* ── Concept map ─────────────────────────────────────────────────────────
+ * Colour says which paper an idea comes from; line style says how two ideas
+ * relate. Motion is springy and brief, and all of it stops for readers who
+ * ask for reduced motion.
+ */
+.graph {
+  margin-top: 1.5rem;
+}
+.graph-stage {
+  position: relative;
+  padding-top: 2.25rem;
+  background: radial-gradient(closest-side at 50% 54%, var(--active-bg), transparent);
+}
+.graph-svg {
+  width: 100%;
+  max-width: 40rem;
+  margin: 0 auto;
+  display: block;
+  overflow: visible;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+
+/* The tracks ideas sit on, and the orbits they circle when zoomed in. */
+.orbit {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 1.2;
+  stroke-dasharray: 2 7;
+  stroke-linecap: round;
+}
+.orbits .spin {
+  transform-box: view-box;
+  transform-origin: 310px 310px;
+  animation: orbit-spin 120s linear infinite;
+}
+.orbits .spin.slow {
+  animation-duration: 200s;
+  animation-direction: reverse;
+}
+.orbits .glow {
+  animation: fade-in 0.6s ease-out both;
+}
+@keyframes orbit-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.edge {
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1.2;
+  stroke-linecap: round;
+  opacity: 0.3;
+  transition: opacity 0.2s;
+}
+.edge.lit {
+  opacity: 0.55;
+}
+/* A dashed accent line is a weaker claim: two ideas that read as the same
+   thing, rather than two an episode actually covered together. */
 .edge.related {
   stroke: var(--accent);
-  stroke-dasharray: 3 4;
-  opacity: 0.4;
+  stroke-dasharray: 2 5;
 }
-.edge.related.lit {
-  opacity: 0.75;
+.edge.typed {
+  stroke: var(--ink);
+  stroke-width: 1.6;
+  opacity: 0.38;
+}
+.edge.typed.lit {
+  opacity: 0.78;
+}
+.edge.t-builds-on {
+  stroke-width: 2.6;
+}
+.edge.t-is-a {
+  stroke-dasharray: 9 4;
+}
+.edge.t-used-for {
+  stroke-width: 2.4;
+  stroke-dasharray: 0.1 5;
+}
+.edge.t-contrasts-with {
+  stroke-dasharray: 5 5;
+}
+.relation {
+  cursor: pointer;
+}
+.relation:hover .edge.typed,
+.edge.typed.chosen {
+  opacity: 1;
+}
+.edge.typed.chosen {
+  stroke-width: 3;
+}
+/* Relation lines are clickable through a wider, invisible stroke. */
+.edge-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 14;
+}
+.arrowhead {
+  fill: var(--ink);
+  opacity: 0.8;
+}
+/* The relation named on a line around the idea zoomed in on. */
+.edge-label {
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  fill: var(--muted);
+  stroke: var(--bg);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  paint-order: stroke;
+  pointer-events: none;
+}
+
+.node {
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+.node.dimmed {
+  opacity: 0.18;
+}
+.node.leaving {
+  pointer-events: none;
+}
+/* Filled in the paper's colour (set as the node's `color`), with a ring of
+   background so a node sits cleanly on top of the lines through it. */
+.dot {
+  fill: currentColor;
+  stroke: var(--bg);
+  stroke-width: 2;
+  transform-box: fill-box;
+  transform-origin: center;
+  transition:
+    transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
+    filter 0.25s;
+}
+.node:hover .dot {
+  transform: scale(1.3);
+  filter: drop-shadow(0 0 6px currentColor);
+}
+.node.bridge .dot {
+  filter: drop-shadow(0 0 5px currentColor);
+}
+.node.centre .dot {
+  stroke-width: 3;
+  filter: drop-shadow(0 0 12px currentColor);
+}
+.label {
+  font-size: 11px;
+  font-weight: 500;
+  fill: var(--muted);
+  stroke: var(--bg);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  paint-order: stroke;
+  transition: fill 0.2s;
+}
+.node:hover .label,
+.node.bridge .label {
+  fill: var(--ink);
+}
+.label.centre {
+  font-size: 14px;
+  font-weight: 650;
+  fill: var(--ink);
+  stroke-width: 4px;
+}
+
+/* New since the last visit: a halo in the idea's own colour that breathes. */
+.new-halo {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  animation: new-pulse 2.4s ease-in-out infinite;
+}
+@keyframes new-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+.graph-new {
+  color: var(--accent);
+}
+
+/* Zoomed in: what is at the centre, and the way back out. */
+.zoom-title {
+  position: absolute;
+  top: 0.35rem;
+  left: 0.25rem;
+  right: 3.5rem;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.8rem;
+  color: var(--muted);
+  animation: fade-in 0.3s ease-out both;
+}
+.zoom-title strong {
+  color: var(--ink);
+  font-size: 0.95rem;
+}
+.zoom-title .paper-dot {
+  margin: 0;
+}
+.zoom-close {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 1;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.08);
+  cursor: pointer;
+  transition:
+    transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1),
+    background 0.15s;
+  animation: pop-in 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.zoom-close:hover {
+  transform: rotate(90deg) scale(1.08);
+  background: var(--active-bg);
+}
+.zoom-close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Zoomed in, the orbit is the thing to look at, so the card stops floating
+   over it and sits below; the title chip keeps the centre named meanwhile. */
+.graph-stage.zoomed ~ .graph-detail {
+  position: static;
+  max-height: none;
+  box-shadow: none;
+}
+
+/* A paper's colour, where the card names its episode. */
+.paper-dot {
+  display: inline-block;
+  flex: none;
+  width: 0.6rem;
+  height: 0.6rem;
+  margin-right: 0.4rem;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orbits .spin,
+  .orbits .glow,
+  .zoom-title,
+  .zoom-close,
+  .new-halo {
+    animation: none;
+  }
+  .new-halo {
+    opacity: 0.7;
+  }
+  .dot,
+  .zoom-close {
+    transition: none;
+  }
 }
