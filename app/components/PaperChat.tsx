@@ -12,18 +12,48 @@ interface Citation {
 
 type AnswerKind = "from-paper" | "background" | "not-addressed";
 
+/** One action of the investigation behind an answer. */
+interface Step {
+  action: "search" | "find" | "read" | "answer";
+  detail: string;
+  note: string;
+}
+
+/** How a step reads, in progress and afterwards. */
+function describe(step: Step): string {
+  switch (step.action) {
+    case "search":
+      return `Searched for “${step.detail}”`;
+    case "find":
+      return `Looked for “${step.detail}”`;
+    case "read":
+      return `Read “${step.detail}”`;
+    case "answer":
+      return step.note.startsWith("sent back")
+        ? "Checked its answer and went back"
+        : "Answered";
+  }
+}
+
 interface Exchange {
   question: string;
   answer?: string;
   kind?: AnswerKind;
   grounded?: boolean;
   citations?: Citation[];
+  /** The investigation, as it happens and afterwards. */
+  steps?: Step[];
+  mode?: "agent" | "single-pass";
   error?: string;
   remedy?: string;
 }
 
 /**
  * Asking the paper a question, with the passages behind the answer.
+ *
+ * The answer comes from an agent investigating the paper, and the reader can
+ * watch it work: each search and read appears as it happens, and stays
+ * available afterwards as "how it found this".
  *
  * The sources are the point, not decoration. An answer with no citations is
  * either the paper declining to address the question — which is a real answer
@@ -113,13 +143,21 @@ export function PaperChat({
 
           // `text` is the prose so far, replaced wholesale each time; `done`
           // carries the label and the citations that survived being looked up.
-          if (event === "text") patch({ answer: data.text });
+          if (event === "step")
+            setExchanges((list) =>
+              list.map((x, i) =>
+                i === index ? { ...x, steps: [...(x.steps ?? []), data as Step] } : x,
+              ),
+            );
+          else if (event === "text") patch({ answer: data.text });
           else if (event === "done")
             patch({
               answer: data.answer,
               kind: data.kind,
               grounded: data.grounded,
               citations: data.citations,
+              steps: data.steps,
+              mode: data.mode,
             });
           else if (event === "failed") patch({ error: data.error, remedy: data.remedy });
         }
@@ -151,13 +189,42 @@ export function PaperChat({
               {x.remedy && <span className="sources"> {x.remedy}</span>}
             </p>
           ) : x.answer === undefined ? (
-            <p className="a sub">Reading the paper…</p>
+            // The investigation, live: what it is searching and reading now.
+            <ol className="agent-steps live" aria-live="polite">
+              {(x.steps ?? []).map((st, j) => (
+                <li key={j}>
+                  {describe(st)}
+                  <span className="agent-note"> · {st.note}</span>
+                </li>
+              ))}
+              <li className="agent-working">
+                {x.steps?.length
+                  ? "Thinking about what to look at next…"
+                  : "Looking at the paper…"}
+              </li>
+            </ol>
           ) : (
             <>
               {x.kind === "background" && (
                 <p className="kind background">General background, not from this paper</p>
               )}
               <p className="a">{x.answer}</p>
+              {x.steps && x.steps.length > 1 && (
+                <details className="agent-trail">
+                  <summary>
+                    How it found this ·{" "}
+                    {x.steps.filter((st) => st.action !== "answer").length} steps
+                  </summary>
+                  <ol className="agent-steps">
+                    {x.steps.map((st, j) => (
+                      <li key={j}>
+                        {describe(st)}
+                        <span className="agent-note"> · {st.note}</span>
+                      </li>
+                    ))}
+                  </ol>
+                </details>
+              )}
               {x.citations && x.citations.length > 0 ? (
                 <p className="sources">
                   {x.citations.map((c, j) => (

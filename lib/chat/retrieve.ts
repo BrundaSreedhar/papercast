@@ -132,27 +132,35 @@ function ranking(
   return new Map(order.map((s, rank) => [s.i, rank]));
 }
 
+/** Sections ranked against a query, best first. */
+export interface RankedSections {
+  /** Indices into `paper.sections`, best first. */
+  order: number[];
+  /**
+   * Whether lexical scoring matched anything.
+   *
+   * When it did not, any order came from dense scoring alone, which ranks every
+   * section whether or not one is relevant — so a caller should treat it as a
+   * guess, never as evidence the paper covers the question.
+   */
+  lexicalMatch: boolean;
+  method: Retrieved["method"];
+}
+
 /**
- * Pick the sections most likely to answer a question.
+ * Rank a paper's sections against a query: BM25, fused with dense scoring.
  *
- * Returns the whole paper when it is short, when nothing matches, or when the
- * selection would not be meaningfully smaller — in every one of those cases
- * retrieving is cost without benefit.
+ * Shared by the one-shot retrieval below and by the agent's search tool, so
+ * both rank exactly the same way. `requireLexical` is the veto: with it, a
+ * query with no lexical purchase returns nothing rather than a dense guess.
  */
-export async function retrieveForQuestion(
+export async function rankSections(
   paper: PaperStructure,
-  question: string,
-  opts: RetrieveOptions = {},
-): Promise<Retrieved> {
-  const budget = opts.budget ?? DEFAULT_BUDGET;
+  query: string,
+  opts: { dense?: DenseScorer | null; requireLexical?: boolean } = {},
+): Promise<RankedSections> {
   const dense = opts.dense === undefined ? faissScorer : opts.dense;
-
-  const whole = paperToText(paper);
-  const asked = terms(question);
-  if (whole.length <= MIN_PAPER_CHARS || asked.length === 0) {
-    return { text: whole, sections: [], whole: true, method: "lexical" };
-  }
-
+  const requireLexical = opts.requireLexical ?? true;
   const sections = paper.sections;
   const bodies = sections.map((s) => terms(s.content));
 
@@ -165,7 +173,7 @@ export async function retrieveForQuestion(
   const idf = (w: string) =>
     Math.log(1 + sections.length / (1 + (appearsIn.get(w) ?? 0)));
 
-  const wanted = new Set(asked);
+  const wanted = new Set(terms(query));
   const averageLength =
     bodies.reduce((n, b) => n + b.length, 0) / Math.max(1, bodies.length);
 
@@ -204,15 +212,15 @@ export async function retrieveForQuestion(
    * whole text, exactly as it did before dense retrieval existed.
    */
   const lexicalRank = ranking(lexical, (score) => score > 0);
-  if (lexicalRank.size === 0) {
-    return { text: whole, sections: [], whole: true, method: "lexical" };
+  if (lexicalRank.size === 0 && requireLexical) {
+    return { order: [], lexicalMatch: false, method: "lexical" };
   }
 
   let denseRank = new Map<number, number>();
   let method: Retrieved["method"] = "lexical";
   if (dense) {
     const scores = await dense(
-      question,
+      query,
       sections.map((s) => `${s.heading}. ${s.content}`),
     );
     if (scores && scores.length === sections.length) {
@@ -237,6 +245,38 @@ export async function retrieveForQuestion(
       return { i, score };
     })
     .sort((a, b) => b.score - a.score || a.i - b.i);
+
+  return { order: fused.map((f) => f.i), lexicalMatch: lexicalRank.size > 0, method };
+}
+
+/**
+ * Pick the sections most likely to answer a question.
+ *
+ * Returns the whole paper when it is short, when nothing matches, or when the
+ * selection would not be meaningfully smaller — in every one of those cases
+ * retrieving is cost without benefit.
+ */
+export async function retrieveForQuestion(
+  paper: PaperStructure,
+  question: string,
+  opts: RetrieveOptions = {},
+): Promise<Retrieved> {
+  const budget = opts.budget ?? DEFAULT_BUDGET;
+  const dense = opts.dense === undefined ? faissScorer : opts.dense;
+
+  const whole = paperToText(paper);
+  const asked = terms(question);
+  if (whole.length <= MIN_PAPER_CHARS || asked.length === 0) {
+    return { text: whole, sections: [], whole: true, method: "lexical" };
+  }
+
+  const sections = paper.sections;
+  const ranked = await rankSections(paper, question, { dense, requireLexical: true });
+  if (!ranked.lexicalMatch) {
+    return { text: whole, sections: [], whole: true, method: "lexical" };
+  }
+  const { method } = ranked;
+  const fused = ranked.order.map((i) => ({ i }));
 
   const chosen = new Set<number>();
   let used = 0;

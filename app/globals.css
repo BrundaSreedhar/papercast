@@ -1673,3 +1673,53 @@ audio {
     transition: none;
   }
 }
+
+/* ── Asking the paper: the agent's investigation ───────────────────────── */
+.agent-steps {
+  list-style: none;
+  margin: 0.35rem 0 0.25rem;
+  padding: 0 0 0 0.75rem;
+  border-left: 2px solid var(--line);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.82rem;
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.agent-steps li {
+  animation: fade-in 0.25s ease-out both;
+}
+.agent-note {
+  color: var(--faint);
+}
+.agent-working {
+  color: var(--accent);
+}
+.agent-working::before {
+  content: "";
+  display: inline-block;
+  width: 0.45rem;
+  height: 0.45rem;
+  margin-right: 0.45rem;
+  border-radius: 50%;
+  background: currentColor;
+  vertical-align: middle;
+  animation: new-pulse 1.2s ease-in-out infinite;
+}
+.agent-trail {
+  margin-top: 0.35rem;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.agent-trail summary {
+  cursor: pointer;
+  color: var(--faint);
+}
+@media (prefers-reduced-motion: reduce) {
+  .agent-steps li,
+  .agent-working::before {
+    animation: none;
+  }
+}

@@ -9,7 +9,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Whether sending part of the paper beats sending all of it.
+ * Whether sending part of the paper beats sending all of it, when the answer
+ * falls back to a single pass (the agent reads only what it chooses anyway).
  *
  * For a self-hosted model, yes, and not as an optimisation: the stock qwen2:7b
  * defaults to a 4,096-token window, and a paper of seventeen thousand tokens
@@ -30,10 +31,10 @@ const MAX_QUESTION = 1_000;
 /**
  * Ask the paper behind an episode a question.
  *
- * Answers are grounded the same way the transcript is: the model quotes the
- * passages it relied on, and each is resolved to a section and page. A quote
- * that is not in the paper is dropped, so a fabricated citation becomes a
- * missing one rather than a convincing one.
+ * An agent investigates the paper — searching, reading, checking its quotes —
+ * and answers grounded the same way the transcript is: each quote is resolved
+ * to a section and page, and one that is not in the paper is dropped, so a
+ * fabricated citation becomes a missing one rather than a convincing one.
  */
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
@@ -90,7 +91,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 /**
  * The same answer, sent as it is written.
  *
- * Two kinds of event, because they are two different things. `text` is the
+ * `step` reports each action of the investigation as it completes. Then two
+ * kinds of event, because they are two different things. `text` is the
  * prose so far and may be replaced wholesale by the next one — it is a preview,
  * not a transcript of deltas. `done` carries the real reply: the kind, the
  * citations that survived being looked up, and whether it is grounded. A client
@@ -129,6 +131,9 @@ function streamAnswer(
           history,
           retrieve: retrievalPays(provider),
           onText: (soFar) => send("text", { text: soFar }),
+          // Each search, find and read as it happens, so the reader watches the
+          // paper being investigated instead of a spinner.
+          onStep: (step) => send("step", step),
         });
         send("done", reply);
       } catch (err) {
