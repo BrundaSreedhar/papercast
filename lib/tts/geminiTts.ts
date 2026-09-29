@@ -29,6 +29,41 @@ import { geminiTtsConfig } from "../config/env";
 import { buildWav } from "./wav";
 import type { Speaker, TTSProvider } from "./types";
 
+/**
+ * How each speaker is asked to sound, sent identically with every chunk.
+ *
+ * Gemini generates a voice rather than playing one back, and each call is its
+ * own generation with no memory of the last. Given bare text, "Charon" came
+ * back as a noticeably different man from one turn to the next — the narrator's
+ * pitch floor moved 22% across a single episode, where every Piper voice held
+ * within 10%, and a listener heard two people in a one-voice format. The
+ * `voice-consistency` audio check exists because of it.
+ *
+ * Fixing the delivery in words, the same words every time, gives every
+ * generation the same target. The instruction describes a steady, unchanging
+ * speaker rather than a mood, because what drifted was identity, not emotion,
+ * and it ends in a colon so the model reads it as direction rather than text.
+ *
+ * What has been measured, and what has not. Speech recognition on six
+ * directed clips heard only the episode's text, never the direction. Whether
+ * it reduces drift is not yet shown: on two-sentence clips the bare voice
+ * drifted only 11%, and the directed one the same, so short clips do not
+ * reproduce the 22% a full episode showed. Re-recording a full episode and
+ * reading `voice-consistency` is the test that settles it.
+ */
+export const STYLE: Record<Speaker, string> = {
+  narrator:
+    "Read the following as one podcast narrator, in the same voice from start to finish: calm, warm and steady, at a relaxed, even pace, without acting out characters or changing tone",
+  host: "Read the following as the podcast's host, in the same voice from start to finish: bright, curious and steady, at a relaxed, even pace",
+  guest:
+    "Read the following as the podcast's guest expert, in the same voice from start to finish: calm, clear and steady, at a relaxed, even pace",
+};
+
+/** What is sent for one chunk: the speaker's fixed direction, then the text. */
+export function directed(text: string, speaker: Speaker): string {
+  return `${STYLE[speaker]}:\n\n${text}`;
+}
+
 /** The rate the TTS models emit. Read from the response and checked, not assumed. */
 const PCM_SAMPLE_RATE = 24000;
 
@@ -88,7 +123,8 @@ export class GeminiTTSProvider implements TTSProvider {
    *
    * Deliberately conservative rather than maximal: the chunker splits on
    * sentence boundaries, so a smaller cap costs an extra call and buys shorter
-   * requests, which matter on a preview model that is slow under load.
+   * requests, which matter on a preview model that is slow under load. The
+   * style direction rides along with every chunk and is not counted here.
    */
   readonly maxChars = 3_000;
 
@@ -129,7 +165,7 @@ export class GeminiTTSProvider implements TTSProvider {
     }
 
     const body = JSON.stringify({
-      contents: [{ parts: [{ text }] }],
+      contents: [{ parts: [{ text: directed(text, speaker) }] }],
       generationConfig: {
         responseModalities: ["AUDIO"],
         speechConfig: {

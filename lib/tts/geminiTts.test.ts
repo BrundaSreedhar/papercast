@@ -6,7 +6,13 @@
  * a transient 503.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { GeminiTTSProvider, rateFromMime, worthRetrying } from "./geminiTts";
+import {
+  directed,
+  GeminiTTSProvider,
+  rateFromMime,
+  STYLE,
+  worthRetrying,
+} from "./geminiTts";
 import { parseWav } from "./wav";
 
 /** A response carrying `samples` of silence, shaped as the API shapes it. */
@@ -125,6 +131,23 @@ describe("GeminiTTSProvider", () => {
     expect(
       body.generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName,
     ).toBe("Puck");
+  });
+
+  it("sends every chunk of a speaker with the same fixed direction", async () => {
+    // Each call is a fresh generation; without the same direction every time,
+    // one named voice drifted into a different-sounding man between turns.
+    const fetchMock = vi.fn(async () => audioResponse(100));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const provider = new GeminiTTSProvider(instant);
+    await provider.synthesizeChunk("First turn.", "narrator");
+    await provider.synthesizeChunk("Second turn.", "narrator");
+    const sent = (fetchMock.mock.calls as unknown as [string, RequestInit][]).map(
+      ([, init]) => JSON.parse(String(init.body)).contents[0].parts[0].text as string,
+    );
+    expect(sent[0]).toBe(directed("First turn.", "narrator"));
+    expect(sent[0]!.startsWith(STYLE.narrator)).toBe(true);
+    expect(sent[1]!.startsWith(STYLE.narrator)).toBe(true);
+    expect(sent[1]).toContain("Second turn.");
   });
 
   it("retries a capacity failure and succeeds", async () => {

@@ -14,7 +14,8 @@ export type AudioMutationKind =
   | "truncate-audio"
   | "desync-timeline"
   | "overlap-turns"
-  | "drop-turn-timing";
+  | "drop-turn-timing"
+  | "change-voice";
 
 export interface AudioMutation {
   kind: AudioMutationKind;
@@ -48,6 +49,12 @@ export const AUDIO_MUTATIONS: AudioMutation[] = [
     expectedCheck: "turns-voiced",
     description: "A turn has no entry on the timeline at all",
   },
+  {
+    kind: "change-voice",
+    expectedCheck: "voice-consistency",
+    description:
+      "One turn comes out in a lower voice than the rest, as a regenerated voice drifted",
+  },
 ];
 
 function clone(audio: EpisodeAudio): EpisodeAudio {
@@ -70,6 +77,37 @@ function silenceRange(buf: Buffer, startMs: number, endMs: number): Buffer {
   );
   const copy = Buffer.from(data);
   copy.fill(0, Math.max(0, start), Math.max(0, end));
+  return buildWav(format, copy);
+}
+
+/**
+ * Lower the pitch of one turn by a quarter, keeping its length.
+ *
+ * Resampling stretches the turn as it lowers it, so the stretched audio is cut
+ * back to the turn's own span: the timeline stays true, and the only thing that
+ * changed is who seems to be speaking.
+ */
+function lowerVoice(buf: Buffer, startMs: number, endMs: number, factor = 0.75): Buffer {
+  const parsed = parseWav(buf);
+  const { format, data } = parsed;
+  const frameBytes = (format.bitsPerSample / 8) * format.channels;
+  const start = Math.floor((startMs / 1000) * format.sampleRate);
+  const end = Math.min(
+    Math.floor(data.length / frameBytes),
+    Math.ceil((endMs / 1000) * format.sampleRate),
+  );
+  const copy = Buffer.from(data);
+  for (let f = start; f < end; f++) {
+    // Read the original at a slower rate: frame f takes the sample that was
+    // at start + (f - start) * factor, which lowers every frequency by factor.
+    const src = start + Math.floor((f - start) * factor);
+    for (let c = 0; c < format.channels; c++) {
+      copy.writeInt16LE(
+        data.readInt16LE(src * frameBytes + c * 2),
+        f * frameBytes + c * 2,
+      );
+    }
+  }
   return buildWav(format, copy);
 }
 
@@ -117,6 +155,11 @@ export function applyAudioMutation(
     case "drop-turn-timing":
       out.timings = out.timings.filter((_, i) => i !== target);
       break;
+    case "change-voice": {
+      const t = out.timings[target]!;
+      out.audio = lowerVoice(out.audio, t.startMs, t.endMs);
+      break;
+    }
   }
   return out;
 }
