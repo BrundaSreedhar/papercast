@@ -139,16 +139,19 @@ export function TranscriptPlayer({
   }, []);
 
   /*
-   * Arrived by a link and not yet playing: the linked turn is where the reader
-   * was sent, and following along must not move them. It would, because the
-   * player starts at 0:00 before the cue lands, and a smooth scroll to the
-   * first turn outlasts the jump to the linked one.
+   * Not yet listening: following along must not move the page.
+   *
+   * The player starts at 0:00, which makes turn 0 "active" the moment the page
+   * loads, and scrolling to it carried the reader straight past the title and
+   * the summary before they had pressed anything. Arriving by a link was the
+   * same problem: a smooth scroll to the first turn outlasted the jump to the
+   * linked one. So nothing follows until playback has started once.
    */
-  const arrived = useRef(startTurn !== undefined);
+  const notListening = useRef(true);
 
   // Keep the active line in view, unless the reader has scrolled away.
   useEffect(() => {
-    if (!follow || activeIndex < 0 || arrived.current) return;
+    if (!follow || activeIndex < 0 || notListening.current) return;
     document
       .getElementById(`turn-${activeIndex}`)
       ?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -221,7 +224,7 @@ export function TranscriptPlayer({
           }}
           onDurationChange={(e) => setDurationMs(e.currentTarget.duration * 1000)}
           onPlay={() => {
-            arrived.current = false;
+            notListening.current = false;
             setPlaying(true);
           }}
           onPause={() => setPlaying(false)}

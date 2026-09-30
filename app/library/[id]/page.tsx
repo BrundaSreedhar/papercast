@@ -5,6 +5,7 @@ import { TranscriptPlayer } from "@/app/components/TranscriptPlayer";
 import { PaperChat } from "@/app/components/PaperChat";
 import { VoiceAsk } from "@/app/components/VoiceAsk";
 import { DeleteEpisode } from "@/app/components/DeleteEpisode";
+import { EpisodeSummary } from "@/app/components/EpisodeSummary";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -63,26 +64,7 @@ export default async function Episode({
           : ""}
       </p>
 
-      {record.summary && (
-        /*
-         * Closed by default, and a plain <details> rather than a component with
-         * state: it needs no JavaScript, it is keyboard operable for free, and
-         * this page is rendered on the server.
-         */
-        <details className="card summary">
-          <summary>
-            <span className="summary-label">What this episode covers</span>
-          </summary>
-          <p>{record.summary}</p>
-          {record.keyPoints?.length > 0 && (
-            <ul className="key-points">
-              {record.keyPoints.map((point, i) => (
-                <li key={i}>{point}</li>
-              ))}
-            </ul>
-          )}
-        </details>
-      )}
+      <EpisodeSummary summary={record.summary} keyPoints={record.keyPoints} />
 
       {record.hasAudio ? (
         <TranscriptPlayer

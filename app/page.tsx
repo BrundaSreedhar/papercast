@@ -10,6 +10,7 @@ import {
   type Turn,
 } from "./components/TranscriptPlayer";
 import { PaperChat } from "./components/PaperChat";
+import { EpisodeSummary } from "./components/EpisodeSummary";
 
 const STAGES = [
   "parsing",
@@ -29,7 +30,62 @@ const STAGE_LABELS: Record<string, string> = {
 const FORMAT_LABEL: Record<string, string> = {
   dialogue: "two hosts",
   solo: "solo",
-  eli5: "for a five-year-old",
+  eli5: "explained simply",
+};
+
+/**
+ * Two lengths, not a number box. A reader choosing how long an episode runs is
+ * choosing what kind of listen it is, and "7 minutes" says less than "the
+ * gist" or "the whole argument". Each sends the middle of its range to the
+ * length budget, which already allows for runs landing a little either side.
+ */
+const LENGTHS = [
+  {
+    id: "summary",
+    minutes: 5,
+    label: "Summary",
+    range: "4–6 min",
+    blurb: "The gist, over a coffee.",
+  },
+  {
+    id: "deep",
+    minutes: 11,
+    label: "Deep dive",
+    range: "10–12 min",
+    blurb: "The whole argument, for a long walk.",
+  },
+] as const;
+type LengthId = (typeof LENGTHS)[number]["id"];
+
+const FORMATS = [
+  { id: "dialogue", label: "Two hosts" },
+  { id: "solo", label: "Solo" },
+  { id: "eli5", label: "Like I'm five" },
+] as const;
+
+/**
+ * An equalizer: the wordmark's bars, grown up. It idles while nothing is
+ * happening, jumps when a paper is dragged over, and plays while an episode is
+ * being made. Decoration only, so it is hidden from assistive technology, and
+ * it holds still for readers who ask for reduced motion.
+ */
+function Equalizer({ live = false, lit = false }: { live?: boolean; lit?: boolean }) {
+  return (
+    <span className={`eq${live ? " live" : ""}${lit ? " lit" : ""}`} aria-hidden="true">
+      {Array.from({ length: 9 }, (_, i) => (
+        <i key={i} />
+      ))}
+    </span>
+  );
+}
+
+/** Speech backends as a listener would name them. */
+const VOICE_NAME: Record<string, string> = {
+  gemini: "Gemini",
+  openai: "OpenAI",
+  kokoro: "Kokoro",
+  piper: "Piper",
+  say: "the system voice",
 };
 
 /** "Reading the paper" reads as a heading; mid-sentence it needs a small letter. */
@@ -60,6 +116,7 @@ interface Summary {
     ttsCalls: number;
     usd?: number;
   };
+  voice?: { provider: string; fellBackFrom?: string; why?: string };
 }
 interface DemoPaper {
   id: string;
@@ -78,9 +135,7 @@ export default function Home() {
   const [config, setConfig] = useState<Config | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [paperId, setPaperId] = useState<string | null>(null);
-  const [minutes, setMinutes] = useState(4);
-  const [verify, setVerify] = useState(false);
-  const [revise, setRevise] = useState(false);
+  const [length, setLength] = useState<LengthId>("summary");
   const [provider, setProvider] = useState("open");
   const [format, setFormat] = useState("dialogue");
   const [recent, setRecent] = useState<
@@ -100,6 +155,9 @@ export default function Home() {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [timings, setTimings] = useState<Timing[]>([]);
   const [citations, setCitations] = useState<Citation[]>([]);
+  const [covers, setCovers] = useState<{ summary: string; keyPoints: string[] } | null>(
+    null,
+  );
   const inputRef = useRef<HTMLInputElement>(null);
 
   const demo = config?.demo === true ? config : null;
@@ -116,9 +174,12 @@ export default function Home() {
       .catch(() => setConfig({ demo: false }));
   }, []);
 
+  // The public demo caps episode length; a deep dive it cannot make is not offered.
+  const deepAllowed = !demo || demo.maxMinutes >= 10;
   useEffect(() => {
-    if (demo) setMinutes((m) => Math.min(m, demo.maxMinutes));
-  }, [demo]);
+    if (!deepAllowed) setLength("summary");
+  }, [deepAllowed]);
+  const minutes = LENGTHS.find((l) => l.id === length)!.minutes;
 
   // The shelf, so someone returning lands on what they already made rather than
   // an empty form. Failing quietly: this is a convenience, not the page.
@@ -135,14 +196,13 @@ export default function Home() {
     setSummary(null);
     setTurns([]);
     setCitations([]);
+    setCovers(null);
     setProgress({ stage: "queued", percent: 0, message: "Starting" });
 
     const body = new FormData();
     if (demo) body.set("paper", paperId ?? "");
     else if (file) body.set("pdf", file);
     body.set("minutes", String(minutes));
-    body.set("verify", String(verify));
-    body.set("revise", String(revise));
     body.set("format", format);
     if (!demo) body.set("provider", provider);
 
@@ -185,6 +245,10 @@ export default function Home() {
     const loadTranscript = async () => {
       const t = await fetch(`/api/jobs/${id}/transcript`).then((r) => r.json());
       setTurns(t.episode.turns);
+      setCovers({
+        summary: t.episode.summary ?? "",
+        keyPoints: t.episode.keyPoints ?? [],
+      });
       setTimings(t.timings ?? []);
       setCitations(t.citations ?? []);
     };
@@ -228,6 +292,7 @@ export default function Home() {
           review: job.result?.review,
           reviewError: job.result?.reviewError,
           cost: job.cost,
+          voice: job.result?.voice,
         });
         await loadTranscript();
       }
@@ -237,12 +302,14 @@ export default function Home() {
     // Deliberately not closing: EventSource reconnects on its own, and the
     // reconcile covers the case where the job ended while it was disconnected.
     source.onerror = () => void reconcile();
-  }, [demo, ready, file, paperId, minutes, verify, revise, provider, format]);
+  }, [demo, ready, file, paperId, minutes, provider, format]);
 
-  // Only show the stages this run will actually pass through, so the stepper
-  // matches the progress bar instead of stranding a step that never runs.
-  const shownStages = STAGES.filter(
-    (s) => (s !== "reviewing" || revise) && (s !== "verifying" || verify),
+  // Only show the stages a run from this page passes through, so the stepper
+  // matches the progress bar instead of stranding a step that never runs. The
+  // page no longer offers the fact-check or the audio verification, so neither
+  // stage is shown; both remain available to the CLI and the API.
+  const shownStages: (typeof STAGES)[number][] = STAGES.filter(
+    (s) => s !== "reviewing" && s !== "verifying",
   );
   const stageIndex = progress
     ? shownStages.indexOf(progress.stage as (typeof STAGES)[number])
@@ -250,18 +317,38 @@ export default function Home() {
 
   return (
     <main className="wrap">
-      <h1>Turn a paper into an episode</h1>
-      <p className="sub">
-        Drop in a PDF and get something worth listening to, saying only what the paper
-        says.
-      </p>
+      {summary ? (
+        <>
+          <h1>{summary.paperTitle ?? "Your episode"}</h1>
+          <p className="sub">
+            {FORMAT_LABEL[format] ?? format}
+            {summary.totalMs ? ` · ${Math.round(summary.totalMs / 60000)} min` : ""}
+          </p>
+        </>
+      ) : running ? (
+        <>
+          <h1>Making your episode</h1>
+          <p className="sub">
+            {file ? file.name : "Your paper"}, as a{" "}
+            {length === "deep" ? "deep dive" : "summary"}. You can leave this page open
+            and come back.
+          </p>
+        </>
+      ) : (
+        <>
+          <h1>Hear what the paper says</h1>
+          <p className="sub">
+            Drop in a PDF and get an episode that sticks to what the paper actually says.
+          </p>
+        </>
+      )}
 
       {!running && !summary && (
-        <ul className="pitch">
-          <li>Every line traced to its page</li>
-          <li>Ask the paper questions, by voice or text</li>
-          <li>Runs locally, no account needed</li>
-        </ul>
+        <p className="pitch">
+          <span>Every line traced to its page</span>
+          <span>Ask the paper questions, by voice or text</span>
+          <span>Also runs locally</span>
+        </p>
       )}
 
       {!running && !summary && (
@@ -296,8 +383,16 @@ export default function Home() {
           ) : (
             <>
               <div
-                className={`drop${over ? " over" : ""}`}
+                className={`drop${over ? " over" : ""}${file ? " loaded" : ""}`}
+                role="button"
+                tabIndex={0}
                 onClick={() => inputRef.current?.click()}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    inputRef.current?.click();
+                  }
+                }}
                 onDragOver={(e) => {
                   e.preventDefault();
                   setOver(true);
@@ -310,11 +405,16 @@ export default function Home() {
                   if (f?.type === "application/pdf") setFile(f);
                 }}
               >
-                <strong>{file ? file.name : "Drop a paper here"}</strong>
-                <span>
-                  {file
-                    ? `${(file.size / 1048576).toFixed(1)} MB`
-                    : "or click to choose a PDF"}
+                <Equalizer live={over} lit={file !== null} />
+                <span className="drop-text">
+                  <strong>
+                    {file ? file.name : over ? "Let go" : "Drop a paper here"}
+                  </strong>
+                  <span>
+                    {file
+                      ? `${(file.size / 1048576).toFixed(1)} MB · ready when you are`
+                      : "or click to choose a PDF"}
+                  </span>
                 </span>
               </div>
               <input
@@ -327,21 +427,49 @@ export default function Home() {
             </>
           )}
 
+          <fieldset className="lengths">
+            <legend>How long</legend>
+            {LENGTHS.map((l) => {
+              const off = l.id === "deep" && !deepAllowed;
+              return (
+                <label
+                  key={l.id}
+                  className={`length${length === l.id ? " chosen" : ""}${off ? " off" : ""}`}
+                >
+                  <input
+                    type="radio"
+                    name="length"
+                    value={l.id}
+                    checked={length === l.id}
+                    disabled={off}
+                    onChange={() => setLength(l.id)}
+                  />
+                  <strong>{l.label}</strong>
+                  <span className="range">{l.range}</span>
+                  <em>{off ? "Not in the public demo." : l.blurb}</em>
+                </label>
+              );
+            })}
+          </fieldset>
+
           <div className="controls">
-            <label>
-              Length
-              <input
-                type="number"
-                min={1}
-                max={demo ? demo.maxMinutes : 20}
-                value={minutes}
-                onChange={(e) => setMinutes(Number(e.target.value))}
-                style={{ width: "4rem" }}
-              />
-              min
-            </label>
+            <fieldset className="segmented">
+              <legend className="visually-hidden">Format</legend>
+              {FORMATS.map((f) => (
+                <label key={f.id} className={format === f.id ? "chosen" : ""}>
+                  <input
+                    type="radio"
+                    name="format"
+                    value={f.id}
+                    checked={format === f.id}
+                    onChange={() => setFormat(f.id)}
+                  />
+                  {f.label}
+                </label>
+              ))}
+            </fieldset>
             {!demo && (
-              <label>
+              <label className="model">
                 Model
                 <select value={provider} onChange={(e) => setProvider(e.target.value)}>
                   <option value="open">local (free)</option>
@@ -351,49 +479,21 @@ export default function Home() {
                 </select>
               </label>
             )}
-            <label>
-              Format
-              <select value={format} onChange={(e) => setFormat(e.target.value)}>
-                <option value="dialogue">two hosts</option>
-                <option value="solo">solo</option>
-                <option value="eli5">explain like I&apos;m 5</option>
-              </select>
-            </label>
-            <label className="toggle">
-              <input
-                type="checkbox"
-                checked={revise}
-                onChange={(e) => setRevise(e.target.checked)}
-              />
-              <span>
-                fact-check and repair the script
-                <em>Roughly doubles the time and the cost.</em>
-              </span>
-            </label>
-            {/* Verification transcribes the audio back with whisper.cpp, which
-                the deployed image does not carry. */}
-            {!demo && (
-              <label className="toggle">
-                <input
-                  type="checkbox"
-                  checked={verify}
-                  onChange={(e) => setVerify(e.target.checked)}
-                />
-                <span>
-                  verify the audio afterwards
-                  <em>Free, adds about a minute.</em>
-                </span>
-              </label>
-            )}
-            <button onClick={start} disabled={!ready}>
-              Make the episode
-            </button>
           </div>
+
+          <button className="record" onClick={start} disabled={!ready}>
+            <i className="rec-light" aria-hidden="true" />
+            Record the episode
+          </button>
         </section>
       )}
 
       {progress && !summary && (
-        <section className="card" style={{ marginTop: "1.5rem" }}>
+        <section className="card on-air" style={{ marginTop: "1.5rem" }}>
+          <div className="on-air-head">
+            <Equalizer live lit />
+            <span>On air</span>
+          </div>
           <div className="stages">
             {shownStages.map((s, i) => (
               <div
@@ -455,57 +555,21 @@ export default function Home() {
 
       {summary && (
         <section style={{ marginTop: "1.5rem" }}>
-          {summary.paperTitle && (
-            <p className="sub" style={{ marginBottom: "1rem" }}>
-              {summary.paperTitle}
+          {summary.voice?.fellBackFrom && (
+            // A listener hears the backup voice at once; they should not have
+            // to guess why the episode sounds flatter than the last one.
+            <p className="voice-note">
+              Recorded with the local voice because{" "}
+              {VOICE_NAME[summary.voice.fellBackFrom] ?? summary.voice.fellBackFrom}{" "}
+              {summary.voice.why ?? "was unavailable"}. New episodes use{" "}
+              {VOICE_NAME[summary.voice.fellBackFrom] ?? summary.voice.fellBackFrom} again
+              once it is back.
             </p>
           )}
-          <div className="meta" style={{ marginBottom: "1rem" }}>
-            {summary.totalMs && (
-              <span>
-                <b>
-                  {Math.floor(summary.totalMs / 60000)}:
-                  {String(Math.round((summary.totalMs % 60000) / 1000)).padStart(2, "0")}
-                </b>{" "}
-                long
-              </span>
-            )}
-            {summary.transcriptRecall !== undefined && (
-              <span>
-                <b>{Math.round(summary.transcriptRecall * 100)}%</b> of the script
-                verified in the audio
-              </span>
-            )}
-            {summary.reviewError && (
-              <span title={summary.reviewError.message}>
-                <b>unchecked</b>, the fact-check did not run
-              </span>
-            )}
-            {summary.review && (
-              <span>
-                <b>{Math.round(summary.review.faithfulnessAfter * 100)}%</b> of claims
-                trace to the paper
-                {summary.review.improved &&
-                  ` · repaired ${summary.review.revisedTurns.length} turns`}
-              </span>
-            )}
-            {summary.cost?.usd !== undefined && (
-              <span>
-                <b>${summary.cost.usd.toFixed(3)}</b>
-              </span>
-            )}
-            <button
-              className="ghost"
-              onClick={() => {
-                setSummary(null);
-                setProgress(null);
-                setFile(null);
-                setPaperId(null);
-              }}
-            >
-              New episode
-            </button>
-          </div>
+
+          {covers && (
+            <EpisodeSummary summary={covers.summary} keyPoints={covers.keyPoints} />
+          )}
 
           {jobId && turns.length > 0 && (
             <>

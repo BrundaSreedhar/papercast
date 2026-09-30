@@ -110,6 +110,20 @@ export interface JobResult {
   totalMs?: number;
   /** Share of the script recognized in the audio, when verification ran. */
   transcriptRecall?: number;
+  /**
+   * Which voice actually recorded the episode.
+   *
+   * A hosted voice that fails hands the episode to the local one, which sounds
+   * much flatter. That used to show only in a progress message that scrolled
+   * past, so a listener heard the difference and had no way to know why.
+   */
+  voice?: {
+    provider: string;
+    /** The backend that was meant to record it, when it did not. */
+    fellBackFrom?: string;
+    /** Why, finishing "because <backend> …": "ran out of quota". */
+    why?: string;
+  };
 }
 
 export interface JobError {

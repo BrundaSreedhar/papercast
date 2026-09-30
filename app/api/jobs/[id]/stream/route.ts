@@ -66,6 +66,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
             review: j.result?.review,
             reviewError: j.result?.reviewError,
             cost: j.cost,
+            voice: j.result?.voice,
           });
           finish();
         } else if (e.stage === "error") {

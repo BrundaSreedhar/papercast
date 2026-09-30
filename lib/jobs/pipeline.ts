@@ -521,6 +521,17 @@ async function runJobStages(
         timings: audio.timings,
         totalMs: audio.totalMs,
         transcriptRecall,
+        voice: {
+          provider: audio.provider,
+          ...(audio.fellBackFrom
+            ? {
+                fellBackFrom: audio.fellBackFrom,
+                why: /\b429\b|quota|RESOURCE_EXHAUSTED/i.test(audio.fallbackReason ?? "")
+                  ? "ran out of quota"
+                  : "was unavailable",
+              }
+            : {}),
+        },
       },
     });
   } catch (err) {
