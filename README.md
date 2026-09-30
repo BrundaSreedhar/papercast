@@ -106,6 +106,7 @@ mkdir -p .models && curl -L -o .models/ggml-base.en.bin \
 | `npm run rerecord -- latest`    | Record an episode again in the current voice                                            |
 | `npm run concepts`              | Name the key concepts of existing episodes                                              |
 | `npm run reparse`               | Rebuild episodes' sections after an extraction change                                   |
+| `npm run seed:demo`             | Make the demo shelf's episodes, to bake into a deployment                               |
 | `npm run eval`                  | Generate and score episodes across providers                                            |
 | `npm run eval:validate`         | Check the judge against known-bad episodes                                              |
 | `npm test`                      | 739 tests, no network needed                                                            |
@@ -144,12 +145,16 @@ Reproduce with `npm run eval`, `npm run eval:validate` and `npm test`. How the h
 
 ## Deploy
 
+One container, voice included — no API key needed for the audio.
+
 ```bash
 docker build -t papercast .
-docker run -p 3000:3000 -e ANTHROPIC_API_KEY=sk-... papercast
+docker run -p 3000:3000 -e GEMINI_API_KEY=... papercast
 ```
 
-`DEMO_MODE=1` makes a safe public demo: no uploads, a fixed shelf of papers, and daily limits. Details in [docs/design.md](docs/design.md#deployment).
+`DEMO_MODE=1` makes a safe public demo: no uploads, a fixed shelf of papers, and separate daily limits for episodes and questions. Optionally run `npm run seed:demo` first and the shelf's episodes are baked in, so the link opens on something to listen to.
+
+Free hosting on Hugging Face Spaces: [deploy/huggingface/NOTES.md](deploy/huggingface/NOTES.md). Fly.io is configured too ([fly.toml](fly.toml)). The reasoning is in [docs/design.md](docs/design.md#deployment).
 
 ---
 

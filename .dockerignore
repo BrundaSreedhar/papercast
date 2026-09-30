@@ -26,5 +26,25 @@ uploads
 learning.json
 *.wav
 *.timings.json
+runs
+
+# The local library and its caches. This one is not only weight: the standalone
+# build copies the project tree, so without this rule a deployment would ship
+# whichever papers happen to be on this laptop's shelf — and their audio is
+# excluded above, so every one of them would render a player that 404s. The
+# deployed shelf comes from demo/seed instead, and nowhere else.
+data
+
 lib/eval/results
 tsconfig.tsbuildinfo
+
+# ...except the pre-made shelf episodes, which are the whole point of building
+# them. They are WAVs and JSON, so the rules above would each have dropped
+# them; a negation has to come after the pattern it overrides.
+!demo/seed
+!demo/seed/**
+
+# A clone of the Hugging Face Space, kept here for pushing deployments.
+# It holds a copy of the whole app; it must never be copied into the image
+# or committed back into the project.
+PaperCast/

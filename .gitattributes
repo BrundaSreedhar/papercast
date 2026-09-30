@@ -1,0 +1,11 @@
+# Recordings go through Git LFS.
+#
+# Nothing here reaches this repository: `.gitignore` keeps every `.wav` out of
+# it, and the seeded demo episodes are rebuilt rather than committed. This file
+# exists for the deployment branch, where they must be committed — Hugging Face
+# builds the image from the pushed repository rather than from an image built
+# here, so an episode that is not in git is an episode the Space never sees.
+#
+# LFS rather than plain git because the Hub refuses files over 10 MB on the
+# regular path, and four minutes of 24 kHz mono is about 12 MB.
+*.wav filter=lfs diff=lfs merge=lfs -text

@@ -218,13 +218,21 @@ docker build -t papercast .
 docker run -p 3000:3000 -e ANTHROPIC_API_KEY=sk-... papercast
 ```
 
-Piper and its two voices are baked into the image. The free local voice is the project's default, and a deployment that quietly swapped it for a paid API would advertise something it does not do.
+Kokoro and its weights are baked into the image, with Piper kept behind it as the fallback. The free local voice is the project's default, and a deployment that quietly swapped it for a paid API would advertise something it does not do — but the first version shipped Piper alone, and a demo of a podcast generator that sounds flat has given away the one thing it was built to show. The voice the image speaks in is the voice the project recommends.
 
 ### The public demo is a shelf, not an upload box
 
 A URL anyone can open, spending an API key on any file they choose, is a bill with no ceiling. `DEMO_MODE=1` turns off uploads and offers three arXiv papers instead, fetched into the image from a manifest rather than committed here — the repository has no right to redistribute other people's documents, and the manifest records where each came from.
 
-Two limits sit behind it, for two different failures. One episode at a time protects the machine, since synthesis holds a neural voice model in memory beside the server. Twenty-five a day protects the bill, and is the one that matters once a link is passed around. Both refuse in the open: a message naming the limit and when it lifts, because a demo that silently queues looks broken and one that silently degrades teaches the visitor nothing.
+Two limits sit behind it, for two different failures. Concurrency protects the machine, since synthesis holds a neural voice model in memory beside the server. A daily ceiling protects the bill, and is the one that matters once a link is passed around. Both refuse in the open: a message naming the limit and when it lifts, because a demo that silently queues looks broken and one that silently degrades teaches the visitor nothing.
+
+Both are counted per kind of work, and the reason is that the first version counted only episodes. Asking the paper a question is unlimited by nature, an agent spends several model calls reading before it answers, and none of that touched the gate — so one curious visitor could exhaust a free tier through the chat box while the episode ceiling sat untouched. Questions now have their own allowance, deliberately larger, because a question is a handful of calls rather than minutes of model time. Separating them also buys something the single counter could not: when the day's episodes are gone, the shelf is still listenable and still askable, which is most of what there is to see.
+
+### The deployed shelf is seeded, and nothing else comes with it
+
+An empty demo asks its first visitor to spend four minutes and somebody's quota before it shows them anything, and most of them leave instead. `npm run seed:demo` makes an episode per shelf paper on a laptop and stages it in `demo/seed/`, which the image copies in — so the link opens on something to listen to, read and explore, and the day's allowance is left for the visitors who want to watch one being made. The staged records are restamped with the paper's own id, which is what makes re-seeding replace an episode rather than pile a second copy beside it.
+
+Which made a quieter problem visible. `output: "standalone"` copies the project tree, `data/` was not in `.dockerignore`, and the local library therefore travelled into the image: a public demo listing whichever papers happened to be on the laptop that built it, each one rendering a player that 404s because the audio was excluded. The deployed shelf now comes from `demo/seed` and nowhere else.
 
 The shelf also fixed something the local path never noticed. Extraction takes the first text on page one as the title, and arXiv's copy of _Attention Is All You Need_ opens with Google's permission to reproduce its figures — which then travelled into the prompt as the subject of the episode. A caller that knows the title for certain now says so.
 
@@ -234,7 +242,9 @@ fly secrets set ANTHROPIC_API_KEY=sk-...
 fly deploy
 ```
 
-One machine, stopped when nobody is looking, and a job holds its progress stream open for its whole life so a machine is never stopped out from under an episode.
+One machine, stopped when nobody is looking, and a job holds its progress stream open for its whole life so a machine is never stopped out from under an episode. Two gigabytes rather than one: Kokoro's weights are about 330 MB and onnxruntime wants room to work beside them, which is not what is left after Node has taken its share.
+
+Hugging Face Spaces runs the same container for nothing and without a card on file, which makes it the better host for a link meant to be shared. Its settings live in a YAML header in the Space's own `README.md` rather than in a config file, so that file and the steps are in [`deploy/huggingface/`](../deploy/huggingface/NOTES.md).
 
 ---
 

@@ -30,8 +30,10 @@ lib/eval/results/*
 # local test inputs (not part of the repo)
 sample_papers/
 
-# generated episode output
+# generated episode output — transcripts, audio and timings from a local run
 *.episode.json
+runs/*
+!runs/README.md
 
 # local TTS runtime and voice models (large, fetched on demand)
 .venv-tts/
@@ -57,3 +59,18 @@ data/episodes/
 
 # cached concept embeddings
 data/embeddings/
+
+# Pre-made demo episodes: tens of megabytes of WAV, rebuilt by `npm run
+# seed:demo` and baked into the deployed image from there. The directories
+# themselves stay tracked, because the Dockerfile copies them and a clean
+# checkout that did not have them would fail the build rather than ship an
+# empty shelf.
+demo/seed/episodes/*
+!demo/seed/episodes/.gitkeep
+demo/seed/audio/*
+!demo/seed/audio/.gitkeep
+
+# A clone of the Hugging Face Space, kept here for pushing deployments.
+# It holds a copy of the whole app; it must never be copied into the image
+# or committed back into the project.
+PaperCast/

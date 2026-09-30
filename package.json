@@ -22,7 +22,8 @@
     "concepts": "tsx src/concepts.ts",
     "reparse": "tsx src/reparse.ts",
     "rerecord": "tsx src/rerecord.ts",
-    "demo:papers": "node scripts/fetch-demo-papers.mjs"
+    "demo:papers": "node scripts/fetch-demo-papers.mjs",
+    "seed:demo": "tsx src/seed-demo.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.68.0",

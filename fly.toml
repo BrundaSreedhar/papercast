@@ -20,10 +20,17 @@ primary_region = "sjc"
   DEMO_MAX_MINUTES = "4"
   DEMO_CONCURRENT_JOBS = "1"
   DEMO_DAILY_JOBS = "25"
+  # Questions are gated separately, and more generously: each is a handful of
+  # calls rather than minutes of model time, and the shelf staying askable is
+  # what a visitor gets once the day's episodes are spent.
+  DEMO_CONCURRENT_QUESTIONS = "2"
+  DEMO_DAILY_QUESTIONS = "200"
   # The deployment holds credentials for exactly one provider; the local model
   # option in the UI points at an Ollama server that exists on a laptop.
   LLM_PROVIDER = "anthropic"
-  TTS_PROVIDER = "piper"
+  # The image's own default, repeated here because this file would otherwise
+  # override it — and Piper is what made the first deployed episodes sound flat.
+  TTS_PROVIDER = "kokoro"
 
 [http_service]
   internal_port = 3000
@@ -41,8 +48,9 @@ primary_region = "sjc"
     grace_period = "20s"
 
 [[vm]]
-  # Synthesis holds a neural voice model in memory beside the Node server, and
-  # 512 MB is where that starts failing rather than slowing down.
-  memory = "1gb"
+  # Synthesis holds a neural voice model in memory beside the Node server.
+  # Kokoro's weights are about 330 MB and onnxruntime wants room to work beside
+  # them, which 1 GB does not leave once Node has taken its share.
+  memory = "2gb"
   cpu_kind = "shared"
   cpus = 1

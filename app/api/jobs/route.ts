@@ -56,7 +56,7 @@ export async function POST(req: Request) {
     asked_format === "solo" || asked_format === "eli5" ? asked_format : "dialogue";
 
   if (demo.enabled) {
-    const admission = gate.admit();
+    const admission = gate.admit("job");
     if (!admission.ok) {
       return NextResponse.json(
         { error: admission.message, remedy: admission.remedy },
@@ -83,7 +83,7 @@ export async function POST(req: Request) {
     paperTitle: input.paperTitle,
     audioPath: join(AUDIO_DIR, `${job.id}.wav`),
   }).finally(() => {
-    if (demo.enabled) gate.release();
+    if (demo.enabled) gate.release("job");
   });
 
   return NextResponse.json({ id: job.id, stage: job.stage }, { status: 202 });

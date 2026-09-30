@@ -134,4 +134,14 @@ export const demoConfig = () => ({
   concurrentJobs: num("DEMO_CONCURRENT_JOBS", 1),
   /** Episodes per rolling day, after which the demo says so and stops. */
   dailyJobs: num("DEMO_DAILY_JOBS", 25),
+  /** Questions in flight at once. Short and cheap, so more than one is fine. */
+  concurrentQuestions: num("DEMO_CONCURRENT_QUESTIONS", 2),
+  /**
+   * Questions per rolling day. Higher than the episode limit because a
+   * question is a handful of calls rather than minutes of model time, but
+   * capped all the same: asking is unlimited by nature, an agent spends
+   * several calls reading the paper for each one, and one curious visitor
+   * would otherwise be able to exhaust a free tier on their own.
+   */
+  dailyQuestions: num("DEMO_DAILY_QUESTIONS", 200),
 });
