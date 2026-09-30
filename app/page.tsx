@@ -129,7 +129,9 @@ interface DemoPaper {
  * What this deployment allows. Uploads locally, a fixed shelf publicly — the
  * page asks rather than assuming, because it is the same build either way.
  */
-type Config = { demo: false } | { demo: true; papers: DemoPaper[]; maxMinutes: number };
+type Config =
+  | { demo: false }
+  | { demo: true; papers: DemoPaper[]; maxMinutes: number; allowUploads?: boolean };
 
 export default function Home() {
   const [config, setConfig] = useState<Config | null>(null);
@@ -162,7 +164,9 @@ export default function Home() {
 
   const demo = config?.demo === true ? config : null;
   const running = progress !== null && !summary && !error;
-  const ready = demo ? paperId !== null : file !== null;
+  // Uploads may be open alongside the shelf, so either way in counts.
+  const canUpload = !demo || demo.allowUploads === true;
+  const ready = file !== null || (demo !== null && paperId !== null);
 
   useEffect(() => {
     // A failed config request means the local build, which is the mode with
@@ -200,8 +204,10 @@ export default function Home() {
     setProgress({ stage: "queued", percent: 0, message: "Starting" });
 
     const body = new FormData();
-    if (demo) body.set("paper", paperId ?? "");
-    else if (file) body.set("pdf", file);
+    // A dropped file wins: it is the more deliberate act of the two, and the
+    // shelf selection may just be left over from before they dropped it.
+    if (file) body.set("pdf", file);
+    else if (demo) body.set("paper", paperId ?? "");
     body.set("minutes", String(minutes));
     body.set("format", format);
     if (!demo) body.set("provider", provider);
@@ -373,14 +379,27 @@ export default function Home() {
                 ))}
               </div>
               <p className="note">
-                This is a public demo, so it runs a fixed shelf of papers rather than
-                accepting uploads. A link anyone can open should not be able to spend an
-                API key on an arbitrary file. It makes {demo.maxMinutes} minutes at a
-                time, one episode at a time. Run it on your own PDF by cloning the
-                repository, where none of that applies.
+                {demo.allowUploads ? (
+                  <>
+                    Pick one of these, or drop in a paper of your own below. This is a
+                    public demo, so it makes {demo.maxMinutes} minutes at a time, one
+                    episode at a time, and a limited number a day. Clone the repository to
+                    run it without any of that.
+                  </>
+                ) : (
+                  <>
+                    This is a public demo, so it runs a fixed shelf of papers rather than
+                    accepting uploads. A link anyone can open should not be able to spend
+                    an API key on an arbitrary file. It makes {demo.maxMinutes} minutes at
+                    a time, one episode at a time. Run it on your own PDF by cloning the
+                    repository, where none of that applies.
+                  </>
+                )}
               </p>
             </>
-          ) : (
+          ) : null}
+
+          {canUpload && (
             <>
               <div
                 className={`drop${over ? " over" : ""}${file ? " loaded" : ""}`}

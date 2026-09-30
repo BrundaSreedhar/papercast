@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { askPaper } from "@/lib/chat/index";
 import { getEpisode } from "@/lib/library/store";
 import { getProvider } from "@/lib/llm/index";
-import { activeProvider, type ProviderName } from "@/lib/config/env";
+import { activeProvider, openModelIsLocal, type ProviderName } from "@/lib/config/env";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,7 +30,12 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
 
   const provider = ((record.provider as ProviderName | undefined) ??
     activeProvider()) as ProviderName;
-  if (provider !== "open") return NextResponse.json({ warmed: false, reason: "metered" });
+  // Not "is it the open provider" but "is it free and on this machine".
+  // `open` pointed at a hosted endpoint is metered like any other, and warming
+  // it would push a whole paper through the model on every page view.
+  if (provider !== "open" || !openModelIsLocal()) {
+    return NextResponse.json({ warmed: false, reason: "metered" });
+  }
 
   try {
     // A real question rather than an empty one: the point is to make the model

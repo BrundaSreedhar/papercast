@@ -4,7 +4,7 @@ import { askPaper, type ChatTurn } from "@/lib/chat/index";
 import { getEpisode } from "@/lib/library/store";
 import { getProvider } from "@/lib/llm/index";
 import { toJobError } from "@/lib/jobs/errors";
-import { activeProvider, type ProviderName } from "@/lib/config/env";
+import { activeProvider, openModelIsLocal, type ProviderName } from "@/lib/config/env";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,7 +23,11 @@ export const dynamic = "force-dynamic";
  * for an answer that has to be right.
  */
 function retrievalPays(provider: ProviderName | undefined): boolean {
-  return (provider ?? activeProvider()) === "open";
+  // Only for a model on this machine. A hosted OpenAI-compatible endpoint
+  // reached through `open` has a large window and caches the prefix like any
+  // other hosted provider, so sending the whole paper is both affordable and
+  // better for an answer that has to be right.
+  return (provider ?? activeProvider()) === "open" && openModelIsLocal();
 }
 
 /** Questions long enough to be a question, short enough not to be a prompt. */

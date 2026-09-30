@@ -144,4 +144,47 @@ export const demoConfig = () => ({
    * would otherwise be able to exhaust a free tier on their own.
    */
   dailyQuestions: num("DEMO_DAILY_QUESTIONS", 200),
+  /**
+   * Let visitors bring their own paper.
+   *
+   * Off by default, and the default is the careful one: a URL anyone can open,
+   * spending an API key on any file they choose, is a bill with no ceiling.
+   * Turning it on is a deliberate decision that the daily limits and the
+   * provider's own ceiling are enough to bound what strangers can spend — which
+   * they are on a free tier that refuses when it runs out, and are not on a
+   * metered account that simply keeps billing.
+   */
+  allowUploads: (process.env.DEMO_ALLOW_UPLOADS ?? "").trim() === "1",
 });
+
+/**
+ * Whether the configured open-model endpoint is on this machine.
+ *
+ * `LLM_PROVIDER=open` used to mean one thing — a model running on localhost,
+ * free and private — and two behaviours were built on that reading: warming
+ * the model on every page view, and retrieving sections rather than sending
+ * the whole paper. Point the same setting at a hosted OpenAI-compatible
+ * endpoint and both become wrong, the first expensively so: warming pushes an
+ * entire paper through a metered model every time a reader opens an episode.
+ *
+ * So the question the code actually wants answered is not "is the provider
+ * named open" but "is this model free and near", and that is what the base URL
+ * says.
+ */
+export function openModelIsLocal(): boolean {
+  const url = openConfig().baseURL;
+  try {
+    const { hostname } = new URL(url);
+    return (
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname === "::1" ||
+      hostname === "[::1]" ||
+      hostname.endsWith(".localhost") ||
+      hostname.endsWith(".local")
+    );
+  } catch {
+    // An unparseable base URL is not something to spend money guessing about.
+    return false;
+  }
+}

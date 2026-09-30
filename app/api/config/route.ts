@@ -19,6 +19,7 @@ export async function GET() {
   return NextResponse.json({
     demo: true,
     maxMinutes: demo.maxMinutes,
+    allowUploads: demo.allowUploads,
     papers: await loadCatalogue(),
   });
 }

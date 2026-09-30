@@ -10,7 +10,7 @@ import { getProvider } from "@/lib/llm/index";
 import { resolveTTSProvider, type TTSProviderName } from "@/lib/tts/index";
 import { answerVoiceFor, speak } from "@/lib/tts/speak";
 import { toJobError } from "@/lib/jobs/errors";
-import { activeProvider, type ProviderName } from "@/lib/config/env";
+import { activeProvider, openModelIsLocal, type ProviderName } from "@/lib/config/env";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -131,8 +131,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     const name = (form?.get("provider") as ProviderName | null) ?? record.provider;
     const reply = await askPaper(record.paper, spoken, {
       provider: getProvider((name as ProviderName) || undefined),
-      // Same reasoning as the typed path: a local model cannot hold the paper.
-      retrieve: ((name as ProviderName) || activeProvider()) === "open",
+      // Same reasoning as the typed path: a local model cannot hold the paper,
+      // and a hosted one reached through `open` has no trouble with it.
+      retrieve:
+        ((name as ProviderName) || activeProvider()) === "open" && openModelIsLocal(),
     });
 
     // Speaking the answer is best-effort: a reader who can see the text has
