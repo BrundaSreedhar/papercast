@@ -52,10 +52,10 @@ describe("provider selection", () => {
     const prev = process.env.TTS_PROVIDER;
     delete process.env.TTS_PROVIDER;
     try {
-      // Either is acceptable: the point is that it resolves rather than failing
-      // when Piper's models are absent.
+      // Any local backend is acceptable — the best one installed wins — the
+      // point is that it resolves rather than failing when models are absent.
       const name = (await resolveTTSProvider()).name;
-      expect(["piper", "say"]).toContain(name);
+      expect(["kokoro", "piper", "say"]).toContain(name);
     } finally {
       if (prev !== undefined) process.env.TTS_PROVIDER = prev;
     }

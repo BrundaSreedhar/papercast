@@ -45,6 +45,23 @@ export const openaiConfig = () => ({
  * Piper runs from a project-local virtualenv and voice models that live outside
  * the repository, so both are configurable rather than assumed.
  */
+/**
+ * Kokoro, the local voice: its interpreter, model files and voices.
+ *
+ * `af_heart` is an American female voice, Kokoro's best-rated, and reads the
+ * narration and the host. A two-voice episode needs a second, clearly
+ * different voice for the guest, so that one is American male.
+ */
+export const kokoroConfig = () => ({
+  python: opt("KOKORO_PYTHON", ".venv-tts/bin/python"),
+  model: opt("KOKORO_MODEL", ".voices/kokoro/kokoro-v1.0.onnx"),
+  voices: opt("KOKORO_VOICES", ".voices/kokoro/voices-v1.0.bin"),
+  hostVoice: opt("KOKORO_HOST_VOICE", "af_heart"),
+  guestVoice: opt("KOKORO_GUEST_VOICE", "am_michael"),
+  narratorVoice: opt("KOKORO_NARRATOR_VOICE", "af_heart"),
+  speed: Number(opt("KOKORO_SPEED", "1")),
+});
+
 export const piperConfig = () => ({
   binary: opt("PIPER_BIN", ".venv-tts/bin/piper"),
   hostVoice: opt("PIPER_HOST_VOICE", ".voices/en_US-lessac-medium.onnx"),
