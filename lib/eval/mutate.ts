@@ -17,6 +17,7 @@ export type MutationKind =
   | "swap-number"
   | "fabricate-entity"
   | "add-honorific"
+  | "name-authors"
   | "claim-authorship"
   | "claim-expertise"
   | "invent-show-name"
@@ -46,6 +47,11 @@ export const MUTATIONS: Mutation[] = [
     kind: "add-honorific",
     expectedCheck: "honorifics",
     description: "Give a speaker a doctorate",
+  },
+  {
+    kind: "name-authors",
+    expectedCheck: "author-names",
+    description: "The welcome reads out who wrote the paper",
   },
   {
     kind: "claim-authorship",
@@ -118,6 +124,12 @@ export function applyMutation(episode: Episode, kind: MutationKind): Episode {
       break;
     case "add-honorific":
       turns[0]!.text += " Dr. Halloran walks us through it.";
+      break;
+    // The welcome reading out a byline: what an unconstrained writer produced
+    // for every paper, fourteen names long on PurpCode.
+    case "name-authors":
+      turns[0]!.text +=
+        " The paper was written by Alexandre Verbitski and his colleagues.";
       break;
     case "claim-authorship":
       turns[Math.min(1, turns.length - 1)]!.text +=

@@ -14,6 +14,7 @@ export const FAITHFULNESS = `FAITHFULNESS — this is the top priority:
 - Use ONLY information contained in the provided paper. Do not add outside facts, prior knowledge, comparisons, or citations that are not in the text.
 - Never invent numbers, results, author names, dataset names, or references. If a detail isn't in the paper, don't state it.
 - If the paper is ambiguous or silent on something, either omit it or say the paper does not specify — do not fill the gap with a guess.
+- Never say the names of the paper's authors, anywhere in the episode, even though the paper lists them. Call them "the authors", or say where they work when you are told: "researchers at Google Brain and the University of Toronto". Never guess where they work.
 - Prefer the paper's own framing and terminology; spell out each acronym the first time you use it.
 - The source may end with a "Figures and tables" section describing what the paper's diagrams and tables show. Those descriptions were produced by a model reading the page, not quoted from the paper, so treat them as slightly weaker evidence: use them to explain how something is structured or what a result looked like, attribute them as what the figure shows, and do not state a number from a figure unless the description gives it explicitly.`;
 

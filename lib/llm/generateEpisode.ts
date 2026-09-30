@@ -1,5 +1,6 @@
 import type { ProviderName } from "../config/env";
 import { paperToText, type PaperStructure } from "../pdf/extract";
+import { frontMatter } from "../pdf/frontMatter";
 import { getProvider } from "./index";
 import {
   EPISODE_SCHEMA_DESCRIPTION,
@@ -100,7 +101,11 @@ export async function generateEpisode(
     hasFigures: (paper.figures?.length ?? 0) > 0,
     format,
   });
-  const user = buildUserContent(paperText, truncatedInput);
+  const user = buildUserContent(
+    paperText,
+    truncatedInput,
+    frontMatter(paper).affiliations,
+  );
 
   const result = await provider.generateStructured({
     system,
@@ -251,7 +256,7 @@ function soloPrompt(args: {
 ${FAITHFULNESS}
 
 STRUCTURE — tell it as a story, in this order:
-- THE WELCOME: two or three sentences before anything technical. Greet the listener warmly, say what paper this is and who wrote it, and give them a reason to care about the next few minutes. Speak to one person, not an audience. Warm does not mean padded, and it does not mean hyped: no "buckle up", no "dive"/"diving into", no "unpack", no throat-clearing about how fascinating the topic is. ${NO_HYPE}
+- THE WELCOME: two or three sentences before anything technical. Greet the listener warmly, say what paper this is and where the work comes from (never the authors' names), and give them a reason to care about the next few minutes. Speak to one person, not an audience. Warm does not mean padded, and it does not mean hyped: no "buckle up", no "dive"/"diving into", no "unpack", no throat-clearing about how fascinating the topic is. ${NO_HYPE}
 - THE HOOK: then the real-world question or the surprising problem this paper takes on. Take it from the paper's own motivation, not from what you know about the field.
 - THE CONTEXT: what earlier approaches could not do, or what gap the paper says existed — only as the paper describes it.
 - THE CORE: what the researchers actually did and what they found, as a logical progression rather than a list of results. This is the longest part of the episode.
@@ -336,9 +341,21 @@ THE VOICE — the second thing you must not fabricate:
 - Invent no sponsors, no listener questions, and no biographical detail of any kind.`;
 }
 
-export function buildUserContent(paperText: string, truncated: boolean): string {
+export function buildUserContent(
+  paperText: string,
+  truncated: boolean,
+  /**
+   * Where the authors work, from the paper's title page. Given explicitly
+   * because the author block is often too short to survive extraction, and
+   * "researchers at …" is what the episode says instead of their names.
+   */
+  affiliations: string[] = [],
+): string {
   const note = truncated
     ? "\n\n[Note: the paper text below was truncated to fit; base the episode only on what is present.]"
     : "";
-  return `Here is the paper to adapt into a podcast episode.${note}\n\n${paperText}`;
+  const where = affiliations.length
+    ? `\n\nWHERE THE AUTHORS WORK, as the paper's title page states it: ${affiliations.join("; ")}.`
+    : "";
+  return `Here is the paper to adapt into a podcast episode.${note}${where}\n\n${paperText}`;
 }
