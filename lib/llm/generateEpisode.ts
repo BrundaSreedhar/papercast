@@ -11,7 +11,7 @@ import {
   type Episode,
 } from "./schema";
 import type { LLMProvider, Usage } from "./types";
-import { FAITHFULNESS, NO_HYPE } from "./promptShared";
+import { CONVERSATION, FAITHFULNESS, NO_HYPE, SPOKEN_VOICE } from "./promptShared";
 import {
   estimateOutputTokens,
   measureLength,
@@ -219,10 +219,13 @@ FORMAT AND LENGTH — both requirements are mandatory:
 - Produce a summary (problem, approach, key results, limitations), a list of concise key points, and the episode as a two-host dialogue.
 - The dialogue must contain at least ${targetTurns} turns, strictly alternating between the host and the guest. A turn is one person speaking, typically two to four sentences — not a monologue.
 - The dialogue must total roughly ${wordTarget} words (about ${minutes} minutes of speech). This is a real target, not an upper bound; a short episode is a failed one.
-- The host guides the conversation and asks the questions a curious listener would ask. The guest has read the paper closely and answers them, one idea at a time.
-- The host opens with a brief welcome and closes with a short wrap-up. No music, sound effects, or stage directions.
-- Write spoken language: contractions, short sentences, no markdown, no bullet points inside the dialogue.
-- Cover the paper's core contributions in proportion to their importance rather than padding.${figuresLine(args.hasFigures)}
+- The guest has read the paper closely. The host is a curious listener who has not, and says so by what they ask and what they question.
+- No music, sound effects, or stage directions. No markdown or bullet points inside the dialogue.
+- Cover the paper's core contributions in proportion to their importance rather than padding. ${NO_HYPE}${figuresLine(args.hasFigures)}
+
+${SPOKEN_VOICE}
+
+${CONVERSATION}
 
 SPEAKERS — the second thing you must not fabricate:
 - The show is called "${showName}". Use exactly that name if the opening names the show, and never invent a different show name, episode number, or reference to a previous episode.
@@ -269,9 +272,11 @@ FORMAT AND LENGTH — both requirements are mandatory:
 - The episode must total roughly ${wordTarget} words (about ${minutes} minutes of speech). This is a real target, not an upper bound; a short episode is a failed one.
 - Explain jargon the moment you use it, with a one-line analogy where that earns its place. Never leave a technical term standing on its own.
 - The voice is warm throughout, not only at the open: talk to the listener, use "you" where it is natural, and let curiosity show. Close by telling them what they now know, briefly, rather than stopping mid-thought.
-- Write spoken language: contractions, short sentences, no markdown, no bullet points, no headings.
+- No markdown, no bullet points, no headings.
 - Write NO stage directions, tone cues, or bracketed annotations of any kind — no [pause], no [emphasis], no [tone shifts]. This text is fed straight to a speech synthesizer, which reads such marks aloud as words. Carry the pacing in the sentences themselves.
 - Cover the paper's core contributions in proportion to their importance rather than padding.${figuresLine(args.hasFigures)}
+
+${SPOKEN_VOICE}
 
 THE VOICE — the second thing you must not fabricate:
 - The show is called "${showName}". Use exactly that name if the opening names the show, and never invent a different show name, episode number, or reference to a previous episode.

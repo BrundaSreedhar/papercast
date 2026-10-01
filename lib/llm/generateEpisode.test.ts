@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   generateEpisode,
   estimateOutputTokens,
+  buildSystemPrompt,
   buildUserContent,
   targetTurnCount,
 } from "./generateEpisode";
@@ -267,7 +268,7 @@ describe("the explain-like-I'm-5 format", () => {
 
 describe("targetTurnCount", () => {
   it("scales with length and enforces a conversational floor", () => {
-    expect(targetTurnCount(4)).toBe(14);
+    expect(targetTurnCount(4)).toBe(22);
     expect(targetTurnCount(1)).toBeGreaterThanOrEqual(6);
     expect(targetTurnCount(10)).toBeGreaterThan(targetTurnCount(4));
   });
@@ -283,7 +284,7 @@ describe("targetTurnCount", () => {
     const provider = new StubProvider();
     await generateEpisode(PAPER, { provider, minutes: 4, maxContinuations: 0 });
     const sys = provider.last!.system;
-    expect(sys).toContain("at least 14 turns");
+    expect(sys).toContain("at least 22 turns");
     // Format-aware now: four minutes of dialogue is 4,400 characters of
     // speech, which at 6.8 characters a word is 647 of them.
     expect(sys).toContain("647 words");
@@ -314,5 +315,47 @@ describe("buildUserContent", () => {
   it("adds a truncation note only when truncated", () => {
     expect(buildUserContent("abc", false)).not.toContain("truncated");
     expect(buildUserContent("abc", true)).toContain("truncated");
+  });
+});
+
+describe("the spoken register", () => {
+  const sys = (format: "dialogue" | "solo") =>
+    buildSystemPrompt({ minutes: 4, wordTarget: 600, showName: "PaperCast", format });
+
+  it("bans the stock openers in both spoken formats", () => {
+    // The dialogue used to open "Welcome back to PaperCast, where we dive into
+    // the latest breakthroughs" — words the solo prompt already forbade, which
+    // is how one format came to sound like a documentary and the other did not.
+    for (const format of ["dialogue", "solo"] as const) {
+      const p = sys(format);
+      expect(p, format).toMatch(/welcome back to/i);
+      expect(p, format).toMatch(/dive into/i);
+      expect(p, format).toMatch(/breakthrough/i);
+    }
+  });
+
+  it("asks for contractions and varied turn lengths", () => {
+    for (const format of ["dialogue", "solo"] as const) {
+      expect(sys(format), format).toMatch(/contractions/i);
+      expect(sys(format), format).toMatch(/vary the length/i);
+    }
+  });
+
+  it("separates the paper's terms from the paper's sentences", () => {
+    // FAITHFULNESS asks for the paper's terminology, which is right; it must
+    // not be read as licence to speak in the abstract's clauses.
+    expect(sys("dialogue")).toMatch(/terms, not its sentences/i);
+  });
+
+  it("tells the dialogue it is a conversation rather than an interview", () => {
+    const p = sys("dialogue");
+    expect(p).toMatch(/not an interview/i);
+    expect(p).toMatch(/interview transcript/i);
+    // Solo has no second speaker, so this guidance would be noise there.
+    expect(sys("solo")).not.toMatch(/interview transcript/i);
+  });
+
+  it("holds the dialogue to the no-hype rule, which it used to escape", () => {
+    expect(sys("dialogue")).toMatch(/groundbreaking|paradigm shift/i);
   });
 });
