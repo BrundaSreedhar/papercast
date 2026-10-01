@@ -79,7 +79,7 @@ export const piperConfig = () => ({
  */
 export const geminiConfig = () => ({
   apiKey: req("GEMINI_API_KEY"),
-  model: opt("GEMINI_MODEL", "gemini-2.5-flash"),
+  model: opt("GEMINI_MODEL", "gemini-3.5-flash-lite"),
   baseURL: opt(
     "GEMINI_BASE_URL",
     "https://generativelanguage.googleapis.com/v1beta/openai/",
@@ -171,6 +171,68 @@ export const demoConfig = () => ({
  * named open" but "is this model free and near", and that is what the base URL
  * says.
  */
+/**
+ * What this deployment thinks it is configured to talk to.
+ *
+ * For the health endpoint, and written because the first real deployment
+ * failed with "something went wrong" and there was no way to see from outside
+ * whether the variables had arrived at all. Names and booleans only: which
+ * provider, which model, and whether a credential is present — never its
+ * value, and never enough of one to be worth anything.
+ */
+export function providerStatus(): {
+  provider: string;
+  model?: string;
+  baseURL?: string;
+  hasCredentials: boolean;
+  problem?: string;
+} {
+  let provider: ProviderName;
+  try {
+    provider = activeProvider();
+  } catch (err) {
+    return {
+      provider: process.env.LLM_PROVIDER ?? "(unset)",
+      hasCredentials: false,
+      problem: err instanceof Error ? err.message : String(err),
+    };
+  }
+
+  const present = (name: string) => Boolean(process.env[name]?.trim());
+  switch (provider) {
+    case "anthropic":
+      return {
+        provider,
+        model: opt("ANTHROPIC_MODEL", "claude-sonnet-5"),
+        hasCredentials: present("ANTHROPIC_API_KEY"),
+      };
+    case "openai":
+      return {
+        provider,
+        model: opt("OPENAI_MODEL", "gpt-4o"),
+        hasCredentials: present("OPENAI_API_KEY"),
+      };
+    case "gemini":
+      return {
+        provider,
+        model: opt("GEMINI_MODEL", "gemini-3.5-flash-lite"),
+        hasCredentials: present("GEMINI_API_KEY"),
+      };
+    case "open": {
+      const cfg = openConfig();
+      return {
+        provider,
+        model: cfg.model,
+        baseURL: cfg.baseURL,
+        // The open path defaults the key to "ollama" so a local runtime needs
+        // none; against a hosted endpoint that default is indistinguishable
+        // from having forgotten to set one, which is worth saying out loud.
+        hasCredentials: present("OPEN_API_KEY") || openModelIsLocal(),
+      };
+    }
+  }
+}
+
 export function openModelIsLocal(): boolean {
   const url = openConfig().baseURL;
   try {
