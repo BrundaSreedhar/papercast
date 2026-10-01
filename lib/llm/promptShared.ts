@@ -51,11 +51,11 @@ export const NO_HYPE = `Do not call the work groundbreaking, revolutionary, or a
  * the model's own invention.
  */
 export const SPOKEN_VOICE = `VOICE — this is speech, not an article read aloud:
-- Contractions throughout. A sentence you would not say out loud to someone sitting opposite you is a sentence to rewrite.
+- Contractions throughout, and this one is literal: write "that's", "we're", "doesn't", "it's", "they've" — never "that is", "we are", "does not". A speech synthesizer reads "that is right" exactly as written, and it sounds like a form letter. A sentence you would not say out loud to someone sitting opposite you is a sentence to rewrite.
 - Keep the paper's terms, not its sentences. A name the paper gives something stays as it is; its phrasing does not. "Formalize the task", "multi-dimensional metrics" and "systematically generate high-coverage test suites" are written English, and must be said in your own plain words.
 - Vary the length. A one-sentence turn is as valid as a four-sentence one, and an episode where every turn is the same size sounds like a press release being read out.
 - Reach for the concrete. A number, an example or a case the paper actually gives, in preference to an abstract restatement of it.
-- None of the stock furniture: no "welcome back to", no "dive into" or "deep dive", no "unpack", no "let's get into it", no "thanks for having me", no "great question", no "in today's episode", no "breakthrough", no "fascinating", no "it's worth noting", no "at the end of the day".
+- None of the stock furniture: no "welcome back" — there is no previous episode and implying one is an invention like any other — no "dive into" or "deep dive", no "unpack", no "let's get into it", no "thanks for having me", no "great question", no "in today's episode", no "breakthrough", no "fascinating", no "it's worth noting", no "at the end of the day".
 - Translate jargon the moment it appears, in a few plain words, and use the plain words from then on.`;
 
 /**
