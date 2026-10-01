@@ -60,6 +60,18 @@ export const kokoroConfig = () => ({
   guestVoice: opt("KOKORO_GUEST_VOICE", "am_michael"),
   narratorVoice: opt("KOKORO_NARRATOR_VOICE", "af_heart"),
   speed: Number(opt("KOKORO_SPEED", "1")),
+  /**
+   * The guest reads slightly faster than the host, and not as a stylistic
+   * flourish.
+   *
+   * Kokoro's male voices are graded below its best female ones and read
+   * noticeably flatter and slower at the same setting. Beside `af_heart` the
+   * guest sounded like the episode had slowed down whenever he spoke, which a
+   * listener hears as the dull half of a conversation rather than as a
+   * property of the model. A modest nudge closes most of the gap, where
+   * changing voice entirely did not — the timbre was never the problem.
+   */
+  guestSpeed: Number(opt("KOKORO_GUEST_SPEED", "1.15")),
 });
 
 export const piperConfig = () => ({

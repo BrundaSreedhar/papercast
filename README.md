@@ -46,7 +46,8 @@ Then set `TTS_PROVIDER=kokoro` in `.env`, or leave it unset and the best local v
 | `KOKORO_NARRATOR_VOICE` | `af_heart`   | American female                             |
 | `KOKORO_HOST_VOICE`     | `af_heart`   |                                             |
 | `KOKORO_GUEST_VOICE`    | `am_michael` | American male, so two hosts sound different |
-| `KOKORO_SPEED`          | `1`          |                                             |
+| `KOKORO_SPEED`          | `1`          | Host and narrator                           |
+| `KOKORO_GUEST_SPEED`    | `1.15`       | The male voices read flatter and slower     |
 
 <details>
 <summary>Other voices: Gemini, OpenAI, Piper, macOS</summary>

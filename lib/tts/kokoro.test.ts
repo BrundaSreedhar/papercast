@@ -62,6 +62,22 @@ describe("KokoroProvider", () => {
     expect(k.voiceFor("host")).toBe("af_heart");
     expect(k.voiceFor("guest")).not.toBe("af_heart");
   });
+
+  it("gives the guest a quicker reading than the host", () => {
+    // Kokoro's male voices read flatter and slower at the same setting, and
+    // beside af_heart the guest sounded like the episode slowed down whenever
+    // he spoke. The nudge is per speaker, so the host is untouched.
+    const k = new KokoroProvider();
+    expect(k.speedFor("guest")).toBeGreaterThan(k.speedFor("host"));
+    expect(k.speedFor("narrator")).toBe(k.speedFor("host"));
+  });
+
+  it("lets a deployment set both speeds, and says so in its description", () => {
+    const k = new KokoroProvider({ speed: 1, guestSpeed: 1.3 });
+    expect(k.speedFor("guest")).toBe(1.3);
+    expect(k.speedFor("host")).toBe(1);
+    expect(k.description).toContain("1.3x");
+  });
 });
 
 describe("kokoroAvailable", () => {

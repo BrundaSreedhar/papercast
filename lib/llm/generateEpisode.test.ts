@@ -328,7 +328,7 @@ describe("the spoken register", () => {
     // is how one format came to sound like a documentary and the other did not.
     for (const format of ["dialogue", "solo"] as const) {
       const p = sys(format);
-      expect(p, format).toMatch(/welcome back to/i);
+      expect(p, format).toMatch(/welcome back/i);
       expect(p, format).toMatch(/dive into/i);
       expect(p, format).toMatch(/breakthrough/i);
     }

@@ -35,6 +35,7 @@ export interface KokoroOptions {
   guestVoice?: string;
   narratorVoice?: string;
   speed?: number;
+  guestSpeed?: number;
   /** The worker script; injectable so tests can stand in a fake. */
   script?: string;
 }
@@ -204,6 +205,7 @@ export class KokoroProvider implements TTSProvider {
   private readonly guestVoice: string;
   private readonly narratorVoice: string;
   private readonly speed: number;
+  private readonly guestSpeed: number;
   private readonly script: string;
 
   constructor(opts: KokoroOptions = {}) {
@@ -215,17 +217,24 @@ export class KokoroProvider implements TTSProvider {
     this.guestVoice = opts.guestVoice ?? cfg.guestVoice;
     this.narratorVoice = opts.narratorVoice ?? cfg.narratorVoice;
     this.speed = opts.speed ?? cfg.speed;
+    this.guestSpeed = opts.guestSpeed ?? cfg.guestSpeed;
     this.script = opts.script ?? WORKER_SCRIPT;
   }
 
   get description(): string {
-    return `kokoro: ${this.hostVoice} (host) / ${this.guestVoice} (guest) / ${this.narratorVoice} (narrator)`;
+    const faster = this.guestSpeed !== this.speed ? ` at ${this.guestSpeed}x` : "";
+    return `kokoro: ${this.hostVoice} (host) / ${this.guestVoice} (guest${faster}) / ${this.narratorVoice} (narrator)`;
   }
 
   voiceFor(speaker: Speaker): string {
     if (speaker === "guest") return this.guestVoice;
     if (speaker === "narrator") return this.narratorVoice;
     return this.hostVoice;
+  }
+
+  /** The guest reads a little quicker; see `guestSpeed` in the config. */
+  speedFor(speaker: Speaker): number {
+    return speaker === "guest" ? this.guestSpeed : this.speed;
   }
 
   async synthesizeChunk(text: string, speaker: Speaker): Promise<Buffer> {
@@ -235,7 +244,7 @@ export class KokoroProvider implements TTSProvider {
       await workerFor(this.python, this.script, this.model, this.voices).synthesize(
         text,
         this.voiceFor(speaker),
-        this.speed,
+        this.speedFor(speaker),
         out,
       );
       return await readFile(out);
