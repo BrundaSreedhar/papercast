@@ -68,7 +68,7 @@ export default async function Episode({
 
       {record.hasAudio ? (
         <TranscriptPlayer
-          audioUrl={`/audio/${record.id}.wav`}
+          audioUrl={`/api/library/${record.id}/audio`}
           turns={record.episode.turns}
           timings={record.timings ?? []}
           citations={record.citations ?? []}
