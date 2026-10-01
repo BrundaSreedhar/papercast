@@ -287,6 +287,29 @@ describe("toJobError", () => {
     expect(toJobError(new Error("insufficient_quota")).code).toBe("no_credit");
   });
 
+  it("names a model that will not produce the structure asked for", () => {
+    // The open path's likeliest failure, and it used to arrive as "something
+    // went wrong" with the detail in a log a deployer often cannot read.
+    const e = toJobError(
+      new Error(
+        "Open model produced no valid structured output after 3 attempts. Last error: Unexpected end of JSON input",
+      ),
+    );
+    expect(e.code).toBe("model_output_invalid");
+    // The remedy has to name the actual way out, which is a different model.
+    expect(e.remedy).toMatch(/instruct model|output token budget/i);
+  });
+
+  it("tells a mistyped model name apart from a general failure", () => {
+    for (const raw of [
+      "404 model_not_found",
+      "The model `llama-3.3-70b` does not exist",
+      "unknown model: qwen3",
+    ]) {
+      expect(toJobError(new Error(raw)).code, raw).toBe("model_unknown");
+    }
+  });
+
   it("classifies an unreachable provider", () => {
     expect(toJobError(new Error("connect ECONNREFUSED 127.0.0.1:11434")).code).toBe(
       "provider_unreachable",

@@ -108,6 +108,32 @@ export function toJobError(err: unknown): JobError {
     };
   }
 
+  // A model that will not produce the JSON it was asked for is the open path's
+  // most likely failure, and it had no branch: it arrived as "something went
+  // wrong", with the detail in a server log that whoever deployed the thing
+  // frequently cannot read. Reasoning models are the usual cause — they spend
+  // the completion budget thinking and return nothing, or prose, where an
+  // object was required.
+  if (/produced no valid structured output/i.test(raw)) {
+    return {
+      code: "model_output_invalid",
+      message: "The model did not return the episode in the shape that was asked for.",
+      remedy:
+        "Reasoning models often spend their whole output budget thinking and return nothing usable. Try a plain instruct model — on Groq, llama-3.3-70b-versatile rather than openai/gpt-oss-120b — or raise the output token budget.",
+    };
+  }
+
+  // A mistyped model name reaches here as a 404 from the provider, which says
+  // nothing about which of the several configured names was wrong.
+  if (/model[_ ]?not[_ ]?found|does not exist|no such model|unknown model/i.test(raw)) {
+    return {
+      code: "model_unknown",
+      message: "The provider does not have a model by that name.",
+      remedy:
+        "Check the model name for the selected provider — for the open path that is OPEN_MODEL, which must match the endpoint's own spelling exactly.",
+    };
+  }
+
   if (/Could not extract text|no dialogue turns|not a riff|pdf/i.test(raw)) {
     return {
       code: "unreadable_input",
