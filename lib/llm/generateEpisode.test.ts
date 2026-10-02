@@ -268,7 +268,7 @@ describe("the explain-like-I'm-5 format", () => {
 
 describe("targetTurnCount", () => {
   it("scales with length and enforces a conversational floor", () => {
-    expect(targetTurnCount(4)).toBe(22);
+    expect(targetTurnCount(4)).toBe(14);
     expect(targetTurnCount(1)).toBeGreaterThanOrEqual(6);
     expect(targetTurnCount(10)).toBeGreaterThan(targetTurnCount(4));
   });
@@ -284,7 +284,7 @@ describe("targetTurnCount", () => {
     const provider = new StubProvider();
     await generateEpisode(PAPER, { provider, minutes: 4, maxContinuations: 0 });
     const sys = provider.last!.system;
-    expect(sys).toContain("at least 22 turns");
+    expect(sys).toContain("at least 14 turns");
     // Format-aware now: four minutes of dialogue is 4,400 characters of
     // speech, which at 6.8 characters a word is 647 of them.
     expect(sys).toContain("647 words");
