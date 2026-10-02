@@ -11,6 +11,7 @@ import { EpisodeSchema } from "../llm/schema";
 import { measureLength, targetTurnCount } from "../llm/length";
 import { paperToText } from "../pdf/extract";
 import type { CheckContext, CheckResult, DeterministicReport } from "./types";
+import { checkNoAuthorNames } from "./authorNames";
 
 function ok(id: string, label: string, severity: CheckResult["severity"]): CheckResult {
   return { id, label, passed: true, severity };
@@ -386,6 +387,7 @@ export const ALL_CHECKS = [
   checkNoHonorifics,
   checkNoClaimedExpertise,
   checkNoAuthorImpersonation,
+  checkNoAuthorNames,
   checkNoDirectAddress,
   checkProperNouns,
   checkNumbers,

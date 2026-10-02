@@ -40,9 +40,12 @@ import type { Speaker, TTSProvider } from "./types";
  * `voice-consistency` audio check exists because of it.
  *
  * Fixing the delivery in words, the same words every time, gives every
- * generation the same target. The instruction describes a steady, unchanging
- * speaker rather than a mood, because what drifted was identity, not emotion,
- * and it ends in a colon so the model reads it as direction rather than text.
+ * generation the same target. It asks for one consistent *voice* — identity
+ * is what drifted — and an engaged, expressive *delivery*. The first version
+ * asked for "calm, steady, even pace, without changing tone", which pins the
+ * identity by flattening the reading, and a podcast read that way is exactly
+ * the monotone this project is trying to avoid. The direction ends in a colon
+ * so the model reads it as direction rather than as text.
  *
  * What has been measured, and what has not. Speech recognition on six
  * directed clips heard only the episode's text, never the direction. Whether
@@ -53,10 +56,10 @@ import type { Speaker, TTSProvider } from "./types";
  */
 export const STYLE: Record<Speaker, string> = {
   narrator:
-    "Read the following as one podcast narrator, in the same voice from start to finish: calm, warm and steady, at a relaxed, even pace, without acting out characters or changing tone",
-  host: "Read the following as the podcast's host, in the same voice from start to finish: bright, curious and steady, at a relaxed, even pace",
+    "Read the following as the same podcast narrator throughout, keeping one consistent voice: warm and engaged, like telling a friend about something genuinely interesting, with natural rises, emphasis and pauses; never flat or robotic",
+  host: "Read the following as the podcast's host, keeping one consistent voice: bright, curious and engaged, with natural rises, emphasis and pauses; never flat or robotic",
   guest:
-    "Read the following as the podcast's guest expert, in the same voice from start to finish: calm, clear and steady, at a relaxed, even pace",
+    "Read the following as the podcast's guest expert, keeping one consistent voice: warm, clear and enthusiastic about the work, with natural emphasis and pauses; never flat or robotic",
 };
 
 /** What is sent for one chunk: the speaker's fixed direction, then the text. */

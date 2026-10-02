@@ -1,4 +1,4 @@
-export { DemoGate, type Admission, type DemoLimits } from "./gate";
+export { DemoGate, type Admission, type DemoLimits, type DemoWork } from "./gate";
 export {
   DemoCatalogueSchema,
   DemoPaperSchema,

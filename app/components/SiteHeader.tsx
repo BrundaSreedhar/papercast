@@ -34,12 +34,17 @@ export function SiteHeader() {
       <div className="masthead-inner">
         <Link href="/" className="wordmark">
           <Bars />
-          PaperCast
+          <span className="wordmark-name">PaperCast</span>
         </Link>
         <nav>
-          <Link href="/" className={onLibrary || onConcepts ? undefined : "here"}>
+          {/*
+            A plain link, not a client-side one: from a finished episode on
+            the home page, "/" is the page already showing, so a client-side
+            navigation would change nothing. A real load starts fresh.
+          */}
+          <a href="/" className={onLibrary || onConcepts ? undefined : "here"}>
             New episode
-          </Link>
+          </a>
           <Link href="/library" className={onLibrary ? "here" : undefined}>
             Library
           </Link>

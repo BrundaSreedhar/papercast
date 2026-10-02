@@ -29,7 +29,12 @@ export async function POST(req: Request) {
   // Where the paper comes from is the one thing the two deployments disagree
   // about: locally you bring your own, publicly you pick one off the shelf.
   // Everything below this point is identical, because it is the same pipeline.
-  const input = demo.enabled ? await demoPaper(form) : await uploadedPaper(form);
+  // In demo mode a visitor may still bring their own paper when the deployment
+  // says so; the shelf stays, because picking one is the faster way in.
+  const input =
+    demo.enabled && !(demo.allowUploads && form.get("pdf") instanceof File)
+      ? await demoPaper(form)
+      : await uploadedPaper(form);
   if ("error" in input) {
     return NextResponse.json({ error: input.error }, { status: input.status });
   }
@@ -56,7 +61,7 @@ export async function POST(req: Request) {
     asked_format === "solo" || asked_format === "eli5" ? asked_format : "dialogue";
 
   if (demo.enabled) {
-    const admission = gate.admit();
+    const admission = gate.admit("job");
     if (!admission.ok) {
       return NextResponse.json(
         { error: admission.message, remedy: admission.remedy },
@@ -83,7 +88,7 @@ export async function POST(req: Request) {
     paperTitle: input.paperTitle,
     audioPath: join(AUDIO_DIR, `${job.id}.wav`),
   }).finally(() => {
-    if (demo.enabled) gate.release();
+    if (demo.enabled) gate.release("job");
   });
 
   return NextResponse.json({ id: job.id, stage: job.stage }, { status: 202 });
@@ -113,9 +118,11 @@ async function uploadedPaper(form: FormData): Promise<PaperInput> {
 /** The public path: one of the papers the deployment ships with. */
 async function demoPaper(form: FormData): Promise<PaperInput> {
   const id = form.get("paper");
-  if (typeof id !== "string") {
+  if (typeof id !== "string" || id === "") {
     return {
-      error: "This deployment runs its own papers. Pick one from the list.",
+      error: demo.allowUploads
+        ? "Pick a paper from the list, or drop in a PDF of your own."
+        : "This deployment runs its own papers. Pick one from the list.",
       status: 400,
     };
   }

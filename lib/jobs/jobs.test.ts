@@ -287,6 +287,54 @@ describe("toJobError", () => {
     expect(toJobError(new Error("insufficient_quota")).code).toBe("no_credit");
   });
 
+  it("names the setting a deployment is missing", () => {
+    // The first failure of the first real deployment, and it arrived as
+    // "something went wrong": the credential patterns look for "api key" and
+    // the variable is spelled with underscores.
+    const e = toJobError(
+      new Error(
+        "Missing required environment variable: ANTHROPIC_API_KEY. See .env.example.",
+      ),
+    );
+    expect(e.code).toBe("config_missing");
+    expect(e.message).toContain("ANTHROPIC_API_KEY");
+    expect(e.remedy).toMatch(/secret/i);
+  });
+
+  it("catches a provider name it does not know", () => {
+    const e = toJobError(
+      new Error(
+        'LLM_PROVIDER must be one of "anthropic" | "openai" | "gemini" | "open" (got "groq").',
+      ),
+    );
+    expect(e.code).toBe("config_invalid");
+  });
+
+  it("names a model that will not produce the structure asked for", () => {
+    // The open path's likeliest failure, and it used to arrive as "something
+    // went wrong" with the detail in a log a deployer often cannot read.
+    const e = toJobError(
+      new Error(
+        "Open model produced no valid structured output after 3 attempts. Last error: Unexpected end of JSON input",
+      ),
+    );
+    expect(e.code).toBe("model_output_invalid");
+    // The remedy has to name the actual way out, which is a different model.
+    expect(e.remedy).toMatch(/instruct model|output token budget/i);
+  });
+
+  it("tells a mistyped model name apart from a general failure", () => {
+    for (const raw of [
+      "404 model_not_found",
+      "The model `llama-3.3-70b` does not exist",
+      "unknown model: qwen3",
+      // How Google actually reports it: a 404 with nothing in the body.
+      "404 status code (no body)",
+    ]) {
+      expect(toJobError(new Error(raw)).code, raw).toBe("model_unknown");
+    }
+  });
+
   it("classifies an unreachable provider", () => {
     expect(toJobError(new Error("connect ECONNREFUSED 127.0.0.1:11434")).code).toBe(
       "provider_unreachable",

@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 const FORMAT_LABEL: Record<string, string> = {
   dialogue: "two hosts",
   solo: "solo",
-  eli5: "for a five-year-old",
+  eli5: "explained simply",
 };
 
 function when(ms: number): string {
@@ -33,11 +33,9 @@ export default async function Library() {
   return (
     <main className="wrap">
       <h1>Library</h1>
-      <p className="sub">
-        {episodes.length === 0
-          ? "Nothing here yet. Episodes appear once they finish."
-          : `${episodes.length} episode${episodes.length === 1 ? "" : "s"}, newest first.`}
-      </p>
+      {episodes.length === 0 && (
+        <p className="sub">Nothing here yet. Episodes appear once they finish.</p>
+      )}
 
       {episodes.length === 0 ? (
         <div className="empty">

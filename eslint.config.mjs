@@ -4,7 +4,17 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: ["dist/**", "node_modules/**", "coverage/**", "public/**", ".next/**", "next-env.d.ts"],
+    ignores: [
+      "dist/**",
+      "node_modules/**",
+      "coverage/**",
+      "public/**",
+      ".next/**",
+      "next-env.d.ts",
+      // A clone of the Hugging Face Space: the same files again, linted once
+      // already in their real home.
+      "PaperCast/**",
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,

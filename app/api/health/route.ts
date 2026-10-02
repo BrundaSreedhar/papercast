@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { store } from "../store";
 import { demo, gate } from "../demo";
+import { providerStatus } from "@/lib/config/env";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,7 +18,12 @@ export async function GET() {
   return NextResponse.json({
     ok: true,
     demo: demo.enabled,
+    // Which model this deployment believes it can reach, and whether it holds
+    // a credential for it. Names and booleans only. Without this, a
+    // deployment whose variables never arrived looks identical from outside
+    // to one whose model is misbehaving.
+    model: providerStatus(),
     jobs: (await store.list()).length,
-    ...(demo.enabled ? { gate: gate.status() } : {}),
+    ...(demo.enabled ? { gate: gate.status(), allowUploads: demo.allowUploads } : {}),
   });
 }

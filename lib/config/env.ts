@@ -45,6 +45,35 @@ export const openaiConfig = () => ({
  * Piper runs from a project-local virtualenv and voice models that live outside
  * the repository, so both are configurable rather than assumed.
  */
+/**
+ * Kokoro, the local voice: its interpreter, model files and voices.
+ *
+ * `af_heart` is an American female voice, Kokoro's best-rated, and reads the
+ * narration and the host. A two-voice episode needs a second, clearly
+ * different voice for the guest, so that one is American male.
+ */
+export const kokoroConfig = () => ({
+  python: opt("KOKORO_PYTHON", ".venv-tts/bin/python"),
+  model: opt("KOKORO_MODEL", ".voices/kokoro/kokoro-v1.0.onnx"),
+  voices: opt("KOKORO_VOICES", ".voices/kokoro/voices-v1.0.bin"),
+  hostVoice: opt("KOKORO_HOST_VOICE", "af_heart"),
+  guestVoice: opt("KOKORO_GUEST_VOICE", "am_michael"),
+  narratorVoice: opt("KOKORO_NARRATOR_VOICE", "af_heart"),
+  speed: Number(opt("KOKORO_SPEED", "1")),
+  /**
+   * The guest reads slightly faster than the host, and not as a stylistic
+   * flourish.
+   *
+   * Kokoro's male voices are graded below its best female ones and read
+   * noticeably flatter and slower at the same setting. Beside `af_heart` the
+   * guest sounded like the episode had slowed down whenever he spoke, which a
+   * listener hears as the dull half of a conversation rather than as a
+   * property of the model. A modest nudge closes most of the gap, where
+   * changing voice entirely did not — the timbre was never the problem.
+   */
+  guestSpeed: Number(opt("KOKORO_GUEST_SPEED", "1.15")),
+});
+
 export const piperConfig = () => ({
   binary: opt("PIPER_BIN", ".venv-tts/bin/piper"),
   hostVoice: opt("PIPER_HOST_VOICE", ".voices/en_US-lessac-medium.onnx"),
@@ -62,7 +91,7 @@ export const piperConfig = () => ({
  */
 export const geminiConfig = () => ({
   apiKey: req("GEMINI_API_KEY"),
-  model: opt("GEMINI_MODEL", "gemini-2.5-flash"),
+  model: opt("GEMINI_MODEL", "gemini-3.5-flash-lite"),
   baseURL: opt(
     "GEMINI_BASE_URL",
     "https://generativelanguage.googleapis.com/v1beta/openai/",
@@ -117,4 +146,119 @@ export const demoConfig = () => ({
   concurrentJobs: num("DEMO_CONCURRENT_JOBS", 1),
   /** Episodes per rolling day, after which the demo says so and stops. */
   dailyJobs: num("DEMO_DAILY_JOBS", 25),
+  /** Questions in flight at once. Short and cheap, so more than one is fine. */
+  concurrentQuestions: num("DEMO_CONCURRENT_QUESTIONS", 2),
+  /**
+   * Questions per rolling day. Higher than the episode limit because a
+   * question is a handful of calls rather than minutes of model time, but
+   * capped all the same: asking is unlimited by nature, an agent spends
+   * several calls reading the paper for each one, and one curious visitor
+   * would otherwise be able to exhaust a free tier on their own.
+   */
+  dailyQuestions: num("DEMO_DAILY_QUESTIONS", 200),
+  /**
+   * Let visitors bring their own paper.
+   *
+   * Off by default, and the default is the careful one: a URL anyone can open,
+   * spending an API key on any file they choose, is a bill with no ceiling.
+   * Turning it on is a deliberate decision that the daily limits and the
+   * provider's own ceiling are enough to bound what strangers can spend — which
+   * they are on a free tier that refuses when it runs out, and are not on a
+   * metered account that simply keeps billing.
+   */
+  allowUploads: (process.env.DEMO_ALLOW_UPLOADS ?? "").trim() === "1",
 });
+
+/**
+ * Whether the configured open-model endpoint is on this machine.
+ *
+ * `LLM_PROVIDER=open` used to mean one thing — a model running on localhost,
+ * free and private — and two behaviours were built on that reading: warming
+ * the model on every page view, and retrieving sections rather than sending
+ * the whole paper. Point the same setting at a hosted OpenAI-compatible
+ * endpoint and both become wrong, the first expensively so: warming pushes an
+ * entire paper through a metered model every time a reader opens an episode.
+ *
+ * So the question the code actually wants answered is not "is the provider
+ * named open" but "is this model free and near", and that is what the base URL
+ * says.
+ */
+/**
+ * What this deployment thinks it is configured to talk to.
+ *
+ * For the health endpoint, and written because the first real deployment
+ * failed with "something went wrong" and there was no way to see from outside
+ * whether the variables had arrived at all. Names and booleans only: which
+ * provider, which model, and whether a credential is present — never its
+ * value, and never enough of one to be worth anything.
+ */
+export function providerStatus(): {
+  provider: string;
+  model?: string;
+  baseURL?: string;
+  hasCredentials: boolean;
+  problem?: string;
+} {
+  let provider: ProviderName;
+  try {
+    provider = activeProvider();
+  } catch (err) {
+    return {
+      provider: process.env.LLM_PROVIDER ?? "(unset)",
+      hasCredentials: false,
+      problem: err instanceof Error ? err.message : String(err),
+    };
+  }
+
+  const present = (name: string) => Boolean(process.env[name]?.trim());
+  switch (provider) {
+    case "anthropic":
+      return {
+        provider,
+        model: opt("ANTHROPIC_MODEL", "claude-sonnet-5"),
+        hasCredentials: present("ANTHROPIC_API_KEY"),
+      };
+    case "openai":
+      return {
+        provider,
+        model: opt("OPENAI_MODEL", "gpt-4o"),
+        hasCredentials: present("OPENAI_API_KEY"),
+      };
+    case "gemini":
+      return {
+        provider,
+        model: opt("GEMINI_MODEL", "gemini-3.5-flash-lite"),
+        hasCredentials: present("GEMINI_API_KEY"),
+      };
+    case "open": {
+      const cfg = openConfig();
+      return {
+        provider,
+        model: cfg.model,
+        baseURL: cfg.baseURL,
+        // The open path defaults the key to "ollama" so a local runtime needs
+        // none; against a hosted endpoint that default is indistinguishable
+        // from having forgotten to set one, which is worth saying out loud.
+        hasCredentials: present("OPEN_API_KEY") || openModelIsLocal(),
+      };
+    }
+  }
+}
+
+export function openModelIsLocal(): boolean {
+  const url = openConfig().baseURL;
+  try {
+    const { hostname } = new URL(url);
+    return (
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname === "::1" ||
+      hostname === "[::1]" ||
+      hostname.endsWith(".localhost") ||
+      hostname.endsWith(".local")
+    );
+  } catch {
+    // An unparseable base URL is not something to spend money guessing about.
+    return false;
+  }
+}

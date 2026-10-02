@@ -108,6 +108,68 @@ export function toJobError(err: unknown): JobError {
     };
   }
 
+  // Configuration that never arrived. On a hosted deployment this is the
+  // first failure anyone hits — a variable not saved, named differently, or
+  // saved after the container last started — and it reached the browser as
+  // "something went wrong" because the variable's name has underscores and
+  // the credential patterns above look for "api key". The name is not a
+  // secret, and it is the one thing that makes this fixable.
+  const missing = /Missing required environment variable: ([A-Z0-9_]+)/.exec(raw);
+  if (missing) {
+    return {
+      code: "config_missing",
+      message: `This deployment has no ${missing[1]} set, so it cannot reach a model.`,
+      remedy:
+        "Set it where the deployment keeps its configuration — on Hugging Face that is the Space's Settings, under Variables and secrets, with keys saved as secrets. The container restarts on its own once saved.",
+    };
+  }
+
+  // The same class of failure, one step earlier: a provider name that is not
+  // one of the four.
+  const badProvider = /LLM_PROVIDER must be one of/.test(raw);
+  if (badProvider) {
+    return {
+      code: "config_invalid",
+      message: "This deployment's LLM_PROVIDER is not one of the providers it knows.",
+      remedy: 'It must be exactly "anthropic", "openai", "gemini" or "open".',
+    };
+  }
+
+  // A model that will not produce the JSON it was asked for is the open path's
+  // most likely failure, and it had no branch: it arrived as "something went
+  // wrong", with the detail in a server log that whoever deployed the thing
+  // frequently cannot read. Reasoning models are the usual cause — they spend
+  // the completion budget thinking and return nothing, or prose, where an
+  // object was required.
+  if (/produced no valid structured output/i.test(raw)) {
+    return {
+      code: "model_output_invalid",
+      message: "The model did not return the episode in the shape that was asked for.",
+      remedy:
+        "Reasoning models often spend their whole output budget thinking and return nothing usable. Try a plain instruct model — on Groq, llama-3.3-70b-versatile rather than openai/gpt-oss-120b — or raise the output token budget.",
+    };
+  }
+
+  // A mistyped model name reaches here as a 404 from the provider, which says
+  // nothing about which of the several configured names was wrong.
+  // A bare 404 belongs here too, and is the form this actually takes in the
+  // wild: Google answers an unknown model with "404 status code (no body)",
+  // which carries nothing to match on and so read as "something went wrong".
+  // Model names are retired on the provider's schedule, not yours, so a
+  // deployment that worked last month can start failing untouched.
+  if (
+    /model[_ ]?not[_ ]?found|does not exist|no such model|unknown model|\b404\b/i.test(
+      raw,
+    )
+  ) {
+    return {
+      code: "model_unknown",
+      message: "The provider has no model by that name.",
+      remedy:
+        "Check the model name against the provider's current list — ANTHROPIC_MODEL, OPENAI_MODEL, GEMINI_MODEL or OPEN_MODEL, depending on which is selected. Names are retired over time, so a name that worked before can stop. A 404 can also mean the base URL points at the wrong API.",
+    };
+  }
+
   if (/Could not extract text|no dialogue turns|not a riff|pdf/i.test(raw)) {
     return {
       code: "unreadable_input",

@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
+import { admitQuestion } from "@/app/api/demo";
 import { askPaper, type ChatTurn } from "@/lib/chat/index";
 import { getEpisode } from "@/lib/library/store";
 import { getProvider } from "@/lib/llm/index";
 import { toJobError } from "@/lib/jobs/errors";
-import { activeProvider, type ProviderName } from "@/lib/config/env";
+import { activeProvider, openModelIsLocal, type ProviderName } from "@/lib/config/env";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,7 +23,11 @@ export const dynamic = "force-dynamic";
  * for an answer that has to be right.
  */
 function retrievalPays(provider: ProviderName | undefined): boolean {
-  return (provider ?? activeProvider()) === "open";
+  // Only for a model on this machine. A hosted OpenAI-compatible endpoint
+  // reached through `open` has a large window and caches the prefix like any
+  // other hosted provider, so sending the whole paper is both affordable and
+  // better for an answer that has to be right.
+  return (provider ?? activeProvider()) === "open" && openModelIsLocal();
 }
 
 /** Questions long enough to be a question, short enough not to be a prompt. */
@@ -70,8 +75,13 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   // same place the transcript did unless the reader says otherwise.
   const name = (body.provider ?? record.provider) as ProviderName | undefined;
 
+  // Asked after the request is found to be well-formed and before anything is
+  // spent, so a rejected question never costs a slot out of the allowance.
+  const slot = admitQuestion();
+  if (slot.refusal) return slot.refusal;
+
   if (new URL(req.url).searchParams.get("stream") === "1") {
-    return streamAnswer(id, record.paper, question, history, name);
+    return streamAnswer(id, record.paper, question, history, name, slot.done);
   }
 
   try {
@@ -85,6 +95,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     console.error(`[chat ${id}]`, err);
     const e = toJobError(err);
     return NextResponse.json({ error: e.message, remedy: e.remedy }, { status: 502 });
+  } finally {
+    slot.done();
   }
 }
 
@@ -109,6 +121,8 @@ function streamAnswer(
   question: string,
   history: ChatTurn[],
   provider: ProviderName | undefined,
+  /** Called when the answer is finished, to give the demo slot back. */
+  done: () => void,
 ): Response {
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
@@ -142,6 +156,7 @@ function streamAnswer(
         send("failed", { error: e.message, remedy: e.remedy });
       } finally {
         closed = true;
+        done();
         try {
           controller.close();
         } catch {

@@ -2,6 +2,7 @@ import { access, mkdir, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { NextResponse } from "next/server";
+import { admitQuestion } from "@/app/api/demo";
 import { WhisperCppProvider, whisperAvailable } from "@/lib/asr/index";
 import { askPaper } from "@/lib/chat/index";
 import { getEpisode } from "@/lib/library/store";
@@ -9,7 +10,7 @@ import { getProvider } from "@/lib/llm/index";
 import { resolveTTSProvider, type TTSProviderName } from "@/lib/tts/index";
 import { answerVoiceFor, speak } from "@/lib/tts/speak";
 import { toJobError } from "@/lib/jobs/errors";
-import { activeProvider, type ProviderName } from "@/lib/config/env";
+import { activeProvider, openModelIsLocal, type ProviderName } from "@/lib/config/env";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -100,6 +101,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ error: "That recording is too long." }, { status: 413 });
   }
 
+  // A spoken question costs everything the typed one does and a transcription
+  // and a synthesis besides, so it comes out of the same allowance.
+  const slot = admitQuestion();
+  if (slot.refusal) return slot.refusal;
+
   try {
     const wav = Buffer.from(await file.arrayBuffer());
     // A spoken question is a couple of seconds long, so the larger model costs
@@ -125,8 +131,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     const name = (form?.get("provider") as ProviderName | null) ?? record.provider;
     const reply = await askPaper(record.paper, spoken, {
       provider: getProvider((name as ProviderName) || undefined),
-      // Same reasoning as the typed path: a local model cannot hold the paper.
-      retrieve: ((name as ProviderName) || activeProvider()) === "open",
+      // Same reasoning as the typed path: a local model cannot hold the paper,
+      // and a hosted one reached through `open` has no trouble with it.
+      retrieve:
+        ((name as ProviderName) || activeProvider()) === "open" && openModelIsLocal(),
     });
 
     // Speaking the answer is best-effort: a reader who can see the text has
@@ -157,6 +165,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     console.error(`[ask-voice ${id}]`, err);
     const e = toJobError(err);
     return NextResponse.json({ error: e.message, remedy: e.remedy }, { status: 502 });
+  } finally {
+    slot.done();
   }
 }
 
