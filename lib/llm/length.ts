@@ -115,7 +115,16 @@ export function targetTurnCount(
   // count would chop the talk into fragments that read as stammering.
   // A child-facing beat is shorter than an adult monologue beat, which is itself
   // longer than a dialogue turn.
-  const perMinute = format === "eli5" ? 2.5 : format === "solo" ? 2 : 3.5;
+  //
+  // Dialogue was 3.5 and is measured wrong. At 3.5 a four-minute episode implies
+  // 314 characters a turn, and across nine episodes on two providers a dialogue
+  // turn actually ran 148-207 characters — models wrote 21-24 turns against a
+  // floor of 14, cleared it easily, and still finished short on words. The floor
+  // was not binding and the per-turn length it implied was fiction, so
+  // `expectedCharsPerTurn` reported a turn-length problem that was really a
+  // miscalibrated constant. 5.5 implies 200 characters a turn, which is what a
+  // conversational turn measures; the observed counts imply 5.25-6.0.
+  const perMinute = format === "eli5" ? 2.5 : format === "solo" ? 2 : 5.5;
   const floor = format === "dialogue" ? 6 : 4;
   return Math.min(60, Math.max(floor, Math.round(minutes * perMinute)));
 }

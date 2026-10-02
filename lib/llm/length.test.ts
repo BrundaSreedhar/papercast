@@ -126,7 +126,7 @@ describe("measureLength", () => {
   });
 
   it("keeps the writer and the grader on one turn floor", () => {
-    expect(targetTurnCount(4)).toBe(14);
+    expect(targetTurnCount(4)).toBe(22);
     expect(targetTurnCount(4, "solo")).toBe(8);
   });
 });
